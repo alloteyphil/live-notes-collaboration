@@ -80,7 +80,11 @@ export const getById = query({
       throw new Error("Forbidden");
     }
 
-    return note;
+    return {
+      ...note,
+      currentUserRole: membership.role,
+      canEdit: membership.role !== "viewer",
+    };
   },
 });
 

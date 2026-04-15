@@ -21,6 +21,8 @@ export default function WorkspaceDetailPage() {
   const memberState = useQuery(api.workspaces.listMembers, session ? { workspaceId } : "skip");
   const createNote = useMutation(api.notes.create);
   const inviteMember = useMutation(api.workspaces.inviteMember);
+  const updateMemberRole = useMutation(api.workspaces.updateMemberRole);
+  const removeMember = useMutation(api.workspaces.removeMember);
 
   const [noteTitle, setNoteTitle] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -29,6 +31,8 @@ export default function WorkspaceDetailPage() {
   const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
   const [inviteFeedback, setInviteFeedback] = useState("");
   const [isInviting, setIsInviting] = useState(false);
+  const [memberFeedback, setMemberFeedback] = useState("");
+  const [updatingMemberToken, setUpdatingMemberToken] = useState<string | null>(null);
 
   const workspace = useMemo(
     () => workspaces?.find((item) => item._id === workspaceId),
@@ -78,6 +82,35 @@ export default function WorkspaceDetailPage() {
     }
   };
 
+  const onUpdateMemberRole = async (
+    memberTokenIdentifier: string,
+    role: "editor" | "viewer",
+  ) => {
+    setUpdatingMemberToken(memberTokenIdentifier);
+    setMemberFeedback("");
+    try {
+      await updateMemberRole({ workspaceId, memberTokenIdentifier, role });
+      setMemberFeedback("Member role updated.");
+    } catch (error) {
+      setMemberFeedback(error instanceof Error ? error.message : "Failed to update member role.");
+    } finally {
+      setUpdatingMemberToken(null);
+    }
+  };
+
+  const onRemoveMember = async (memberTokenIdentifier: string) => {
+    setUpdatingMemberToken(memberTokenIdentifier);
+    setMemberFeedback("");
+    try {
+      await removeMember({ workspaceId, memberTokenIdentifier });
+      setMemberFeedback("Member removed.");
+    } catch (error) {
+      setMemberFeedback(error instanceof Error ? error.message : "Failed to remove member.");
+    } finally {
+      setUpdatingMemberToken(null);
+    }
+  };
+
   if (isPending) {
     return <main className="mx-auto mt-10 w-full max-w-3xl px-4">Loading session...</main>;
   }
@@ -122,10 +155,38 @@ export default function WorkspaceDetailPage() {
                     <p className="font-medium">{member.displayName}</p>
                     <p className="text-xs text-zinc-500">{member.userEmail ?? "No email available"}</p>
                   </div>
-                  <span className="text-xs uppercase text-zinc-500">{member.role}</span>
+                  {memberState.currentUserRole === "owner" && member.role !== "owner" ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="rounded-md border border-zinc-300 px-2 py-1 text-xs outline-none ring-zinc-400 focus:ring-2"
+                        disabled={updatingMemberToken === member.tokenIdentifier}
+                        onChange={(event) =>
+                          void onUpdateMemberRole(
+                            member.tokenIdentifier,
+                            event.target.value as "editor" | "viewer",
+                          )
+                        }
+                        value={member.role}
+                      >
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                      <button
+                        className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={updatingMemberToken === member.tokenIdentifier}
+                        onClick={() => void onRemoveMember(member.tokenIdentifier)}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs uppercase text-zinc-500">{member.role}</span>
+                  )}
                 </li>
               ))}
             </ul>
+            {memberFeedback ? <p className="text-sm text-zinc-600">{memberFeedback}</p> : null}
 
             {memberState.currentUserRole === "owner" ? (
               <form className="space-y-2 rounded-md border border-zinc-200 p-3" onSubmit={onInviteMember}>

@@ -56,12 +56,14 @@ export default function NoteEditorPage() {
   const [isTyping, setIsTyping] = useState(false);
 
   const lastSyncedRef = useRef({ title: "", content: "" });
+  const previousCanEditRef = useRef<boolean | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined);
 
   const title = titleInput;
   const content = contentInput;
+  const canEdit = note?.canEdit ?? false;
   const hasUnsavedChanges = titleDirty || contentDirty;
   const effectiveLastSavedAt = lastSavedAt ?? note?.updatedAt ?? null;
   const formattedLastSavedAt = useMemo(() => {
@@ -70,7 +72,7 @@ export default function NoteEditorPage() {
   }, [effectiveLastSavedAt]);
 
   const flushSave = useCallback(async () => {
-    if (!note || (!titleDirty && !contentDirty)) return;
+    if (!note || !canEdit || (!titleDirty && !contentDirty)) return;
     try {
       setSaveStatus("saving");
       if (titleDirty) {
@@ -89,7 +91,7 @@ export default function NoteEditorPage() {
       setSaveStatus("error");
       setFeedback(error instanceof Error ? error.message : "Failed to save note.");
     }
-  }, [content, contentDirty, note, noteId, title, titleDirty, updateContent, updateTitle]);
+  }, [canEdit, content, contentDirty, note, noteId, title, titleDirty, updateContent, updateTitle]);
 
   const flushSaveNow = useCallback(() => {
     if (saveTimerRef.current) {
@@ -129,6 +131,50 @@ export default function NoteEditorPage() {
 
   useEffect(() => {
     if (!note) return;
+
+    const previousCanEdit = previousCanEditRef.current;
+    previousCanEditRef.current = note.canEdit;
+
+    // Skip transition messaging on initial load.
+    if (previousCanEdit === null) return;
+
+    if (previousCanEdit && !note.canEdit) {
+      // Role changed to viewer while user was on this screen.
+      queueMicrotask(() => {
+        setTitleInput(note.title);
+        setContentInput(note.content);
+        setTitleDirty(false);
+        setContentDirty(false);
+        setIsTyping(false);
+        setSaveStatus("idle");
+        setFeedback("Your role changed to viewer. Editing is now disabled.");
+      });
+      return;
+    }
+
+    if (!previousCanEdit && note.canEdit) {
+      // Role changed back to editor; unlock and clear stale read-only status.
+      queueMicrotask(() => {
+        setSaveStatus("idle");
+        setFeedback("Your edit access has been restored.");
+      });
+    }
+  }, [note]);
+
+  const statusLabel = !canEdit
+    ? "Read-only"
+    : saveStatus === "typing"
+      ? "Typing..."
+      : saveStatus === "saving"
+        ? "Saving..."
+        : saveStatus === "saved"
+          ? "Saved"
+          : saveStatus === "error"
+            ? "Save error"
+            : "Idle";
+
+  useEffect(() => {
+    if (!note) return;
     if (!titleDirty && !contentDirty) {
       return;
     }
@@ -149,17 +195,19 @@ export default function NoteEditorPage() {
         return;
       }
       event.preventDefault();
-      flushSaveNow();
+      if (canEdit) {
+        flushSaveNow();
+      }
     };
     window.addEventListener("keydown", onSaveShortcut);
     return () => window.removeEventListener("keydown", onSaveShortcut);
-  }, [flushSaveNow]);
+  }, [canEdit, flushSaveNow]);
 
   useEffect(() => {
     if (!session || !note) return;
 
     const sendHeartbeat = () => {
-      void heartbeat({ noteId, cursorPosition, isTyping });
+      void heartbeat({ noteId, cursorPosition, isTyping: canEdit ? isTyping : false });
     };
 
     sendHeartbeat();
@@ -168,7 +216,7 @@ export default function NoteEditorPage() {
       clearInterval(interval);
       void leavePresence({ noteId });
     };
-  }, [cursorPosition, heartbeat, isTyping, leavePresence, note, noteId, session]);
+  }, [canEdit, cursorPosition, heartbeat, isTyping, leavePresence, note, noteId, session]);
 
   const markTyping = useCallback(() => {
     setIsTyping(true);
@@ -223,13 +271,7 @@ export default function NoteEditorPage() {
         <div className="text-right">
           <p className="text-sm text-zinc-600">
             Status:{" "}
-            <span className="font-medium text-zinc-800">
-              {saveStatus === "idle" && "Idle"}
-              {saveStatus === "typing" && "Typing..."}
-              {saveStatus === "saving" && "Saving..."}
-              {saveStatus === "saved" && "Saved"}
-              {saveStatus === "error" && "Save error"}
-            </span>
+            <span className="font-medium text-zinc-800">{statusLabel}</span>
           </p>
           <p className="text-xs text-zinc-500">
             Active collaborators: {activeCollaborators?.length ?? 0}
@@ -283,13 +325,17 @@ export default function NoteEditorPage() {
         <label className="mb-2 block text-xs font-medium uppercase text-zinc-500">Title</label>
         <input
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-lg font-semibold outline-none ring-zinc-400 focus:ring-2"
+          disabled={!canEdit}
           onChange={(event) => {
+            if (!canEdit) return;
             setTitleInput(event.target.value);
             setTitleDirty(true);
             setSaveStatus("typing");
             markTyping();
           }}
-          onBlur={flushSaveNow}
+          onBlur={() => {
+            if (canEdit) flushSaveNow();
+          }}
           placeholder="Untitled note"
           value={title}
         />
@@ -299,7 +345,9 @@ export default function NoteEditorPage() {
         <label className="mb-2 block text-xs font-medium uppercase text-zinc-500">Content</label>
         <textarea
           className="min-h-[360px] w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-6 outline-none ring-zinc-400 focus:ring-2"
+          disabled={!canEdit}
           onChange={(event) => {
+            if (!canEdit) return;
             setContentInput(event.target.value);
             setContentDirty(true);
             setSaveStatus("typing");
@@ -308,7 +356,9 @@ export default function NoteEditorPage() {
           }}
           onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
           onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-          onBlur={flushSaveNow}
+          onBlur={() => {
+            if (canEdit) flushSaveNow();
+          }}
           onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
           placeholder="Start writing your note..."
           value={content}

@@ -217,8 +217,10 @@ export const listMembers = query({
 
     return {
       currentUserRole: membership.role,
+      currentUserTokenIdentifier: identity.tokenIdentifier,
       members: workspaceMembers.map((member) => ({
         _id: member._id,
+        tokenIdentifier: member.tokenIdentifier,
         role: member.role,
         displayName:
           member.displayName ??
@@ -234,5 +236,69 @@ export const listMembers = query({
         createdAt: invite.createdAt,
       })),
     };
+  },
+});
+
+export const updateMemberRole = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    memberTokenIdentifier: v.string(),
+    role: inviteRoleValidator,
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    await requireWorkspaceOwner(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    if (args.memberTokenIdentifier === identity.tokenIdentifier) {
+      throw new Error("Owner cannot change their own role");
+    }
+
+    const targetMembership = await requireWorkspaceMembership(
+      ctx,
+      args.workspaceId,
+      args.memberTokenIdentifier,
+    );
+    if (!targetMembership) {
+      throw new Error("Member not found");
+    }
+    if (targetMembership.role === "owner") {
+      throw new Error("Cannot change the owner role");
+    }
+
+    await ctx.db.patch(targetMembership._id, {
+      role: args.role,
+    });
+
+    return { ok: true };
+  },
+});
+
+export const removeMember = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    memberTokenIdentifier: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    await requireWorkspaceOwner(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    if (args.memberTokenIdentifier === identity.tokenIdentifier) {
+      throw new Error("Owner cannot remove themselves");
+    }
+
+    const targetMembership = await requireWorkspaceMembership(
+      ctx,
+      args.workspaceId,
+      args.memberTokenIdentifier,
+    );
+    if (!targetMembership) {
+      throw new Error("Member not found");
+    }
+    if (targetMembership.role === "owner") {
+      throw new Error("Cannot remove the owner");
+    }
+
+    await ctx.db.delete(targetMembership._id);
+    return { ok: true };
   },
 });
