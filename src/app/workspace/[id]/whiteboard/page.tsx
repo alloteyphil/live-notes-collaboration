@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { api } from "../../../../../convex/_generated/api";
@@ -37,6 +37,9 @@ export default function WorkspaceWhiteboardPage() {
 
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const saveInFlightRef = useRef(false);
+  const queuedSceneDataRef = useRef<string | null>(null);
+  const lastSavedSceneDataRef = useRef<string | null>(null);
 
   const canEdit = whiteboardState?.canEdit ?? false;
   const statusLabel = useMemo(() => {
@@ -58,18 +61,41 @@ export default function WorkspaceWhiteboardPage() {
   const onSceneChange = useCallback(
     async (sceneData: string) => {
       if (!canEdit) return;
-      try {
-        setSaveState("saving");
-        await saveWhiteboard({ workspaceId, sceneData });
-        setSaveState("saved");
-        setLastSavedAt(Date.now());
-      } catch (error) {
-        setSaveState("error");
-        showToast({
-          message: error instanceof Error ? error.message : "Failed to save whiteboard.",
-          variant: "error",
-        });
+      if (sceneData === lastSavedSceneDataRef.current) {
+        return;
       }
+
+      if (saveInFlightRef.current) {
+        queuedSceneDataRef.current = sceneData;
+        return;
+      }
+
+      saveInFlightRef.current = true;
+      let sceneToSave: string | null = sceneData;
+
+      while (sceneToSave) {
+        try {
+          setSaveState("saving");
+          await saveWhiteboard({ workspaceId, sceneData: sceneToSave });
+          lastSavedSceneDataRef.current = sceneToSave;
+          setSaveState("saved");
+          setLastSavedAt(Date.now());
+          sceneToSave = queuedSceneDataRef.current;
+          queuedSceneDataRef.current = null;
+          if (sceneToSave === lastSavedSceneDataRef.current) {
+            sceneToSave = null;
+          }
+        } catch (error) {
+          setSaveState("error");
+          showToast({
+            message: error instanceof Error ? error.message : "Failed to save whiteboard.",
+            variant: "error",
+          });
+          break;
+        }
+      }
+
+      saveInFlightRef.current = false;
     },
     [canEdit, saveWhiteboard, showToast, workspaceId],
   );

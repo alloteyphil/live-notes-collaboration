@@ -75,6 +75,9 @@ export const save = mutation({
       .unique();
 
     if (existing) {
+      if (existing.sceneData === args.sceneData) {
+        return existing._id;
+      }
       await ctx.db.patch(existing._id, {
         sceneData: args.sceneData,
         updatedByTokenIdentifier: identity.tokenIdentifier,

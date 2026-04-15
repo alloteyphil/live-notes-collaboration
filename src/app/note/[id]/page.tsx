@@ -80,6 +80,8 @@ export default function NoteEditorPage() {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasShownOfflineToastRef = useRef(false);
+  const cursorPositionRef = useRef<number | undefined>(undefined);
+  const isTypingRef = useRef(false);
   const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined);
 
   const title = titleInput;
@@ -248,6 +250,14 @@ export default function NoteEditorPage() {
             : "Idle";
 
   useEffect(() => {
+    cursorPositionRef.current = cursorPosition;
+  }, [cursorPosition]);
+
+  useEffect(() => {
+    isTypingRef.current = isTyping;
+  }, [isTyping]);
+
+  useEffect(() => {
     if (!canEdit) return;
     if (!isOnline) {
       if (!hasShownOfflineToastRef.current) {
@@ -318,7 +328,11 @@ export default function NoteEditorPage() {
     if (!session || !note) return;
 
     const sendHeartbeat = () => {
-      void heartbeat({ noteId, cursorPosition, isTyping: canEdit ? isTyping : false });
+      void heartbeat({
+        noteId,
+        cursorPosition: cursorPositionRef.current,
+        isTyping: canEdit ? isTypingRef.current : false,
+      });
     };
 
     sendHeartbeat();
@@ -327,7 +341,7 @@ export default function NoteEditorPage() {
       clearInterval(interval);
       void leavePresence({ noteId });
     };
-  }, [canEdit, cursorPosition, heartbeat, isTyping, leavePresence, note, noteId, session]);
+  }, [canEdit, heartbeat, leavePresence, note, noteId, session]);
 
   const markTyping = useCallback(() => {
     setIsTyping(true);
