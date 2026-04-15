@@ -7,9 +7,11 @@ import { useMutation, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
+import { useToast } from "@/components/toast-provider";
 
 export default function WorkspaceDetailPage() {
   const { data: session, isPending } = authClient.useSession();
+  const { showToast } = useToast();
   const params = useParams<{ id: string }>();
   const workspaceId = params.id as Id<"workspaces">;
 
@@ -21,6 +23,7 @@ export default function WorkspaceDetailPage() {
   const memberState = useQuery(api.workspaces.listMembers, session ? { workspaceId } : "skip");
   const createNote = useMutation(api.notes.create);
   const inviteMember = useMutation(api.workspaces.inviteMember);
+  const revokeInvite = useMutation(api.workspaces.revokeInvite);
   const updateMemberRole = useMutation(api.workspaces.updateMemberRole);
   const removeMember = useMutation(api.workspaces.removeMember);
 
@@ -33,6 +36,7 @@ export default function WorkspaceDetailPage() {
   const [isInviting, setIsInviting] = useState(false);
   const [memberFeedback, setMemberFeedback] = useState("");
   const [updatingMemberToken, setUpdatingMemberToken] = useState<string | null>(null);
+  const [updatingInviteId, setUpdatingInviteId] = useState<Id<"workspaceInvites"> | null>(null);
 
   const workspace = useMemo(
     () => workspaces?.find((item) => item._id === workspaceId),
@@ -54,8 +58,11 @@ export default function WorkspaceDetailPage() {
       await createNote({ workspaceId, title: trimmedTitle });
       setNoteTitle("");
       setFeedback("Note created.");
+      showToast({ message: "Note created.", variant: "success" });
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Failed to create note.");
+      const message = error instanceof Error ? error.message : "Failed to create note.";
+      setFeedback(message);
+      showToast({ message, variant: "error" });
     } finally {
       setIsCreating(false);
     }
@@ -75,8 +82,11 @@ export default function WorkspaceDetailPage() {
       await inviteMember({ workspaceId, email: trimmedEmail, role: inviteRole });
       setInviteEmail("");
       setInviteFeedback("Invite sent.");
+      showToast({ message: "Invite sent.", variant: "success" });
     } catch (error) {
-      setInviteFeedback(error instanceof Error ? error.message : "Failed to send invite.");
+      const message = error instanceof Error ? error.message : "Failed to send invite.";
+      setInviteFeedback(message);
+      showToast({ message, variant: "error" });
     } finally {
       setIsInviting(false);
     }
@@ -91,8 +101,11 @@ export default function WorkspaceDetailPage() {
     try {
       await updateMemberRole({ workspaceId, memberTokenIdentifier, role });
       setMemberFeedback("Member role updated.");
+      showToast({ message: "Member role updated.", variant: "success" });
     } catch (error) {
-      setMemberFeedback(error instanceof Error ? error.message : "Failed to update member role.");
+      const message = error instanceof Error ? error.message : "Failed to update member role.";
+      setMemberFeedback(message);
+      showToast({ message, variant: "error" });
     } finally {
       setUpdatingMemberToken(null);
     }
@@ -104,10 +117,29 @@ export default function WorkspaceDetailPage() {
     try {
       await removeMember({ workspaceId, memberTokenIdentifier });
       setMemberFeedback("Member removed.");
+      showToast({ message: "Member removed.", variant: "success" });
     } catch (error) {
-      setMemberFeedback(error instanceof Error ? error.message : "Failed to remove member.");
+      const message = error instanceof Error ? error.message : "Failed to remove member.";
+      setMemberFeedback(message);
+      showToast({ message, variant: "error" });
     } finally {
       setUpdatingMemberToken(null);
+    }
+  };
+
+  const onRevokeInvite = async (inviteId: Id<"workspaceInvites">) => {
+    setUpdatingInviteId(inviteId);
+    setInviteFeedback("");
+    try {
+      await revokeInvite({ workspaceId, inviteId });
+      setInviteFeedback("Invite revoked.");
+      showToast({ message: "Invite revoked.", variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to revoke invite.";
+      setInviteFeedback(message);
+      showToast({ message, variant: "error" });
+    } finally {
+      setUpdatingInviteId(null);
     }
   };
 
@@ -122,6 +154,20 @@ export default function WorkspaceDetailPage() {
         <p className="text-sm text-zinc-600">You need to sign in to view notes.</p>
         <Link className="text-sm font-medium text-blue-600 hover:underline" href="/">
           Go to sign in
+        </Link>
+      </main>
+    );
+  }
+
+  if (memberState === null) {
+    return (
+      <main className="mx-auto mt-10 w-full max-w-3xl space-y-4 px-4">
+        <h1 className="text-2xl font-semibold">Workspace access removed</h1>
+        <p className="text-sm text-zinc-600">
+          You no longer have access to this workspace. Return to your dashboard to continue.
+        </p>
+        <Link className="text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
+          Back to Dashboard
         </Link>
       </main>
     );
@@ -232,8 +278,20 @@ export default function WorkspaceDetailPage() {
                       className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 text-sm"
                       key={invite._id}
                     >
-                      <span>{invite.invitedEmail}</span>
-                      <span className="text-xs uppercase text-zinc-500">{invite.role}</span>
+                      <div>
+                        <span>{invite.invitedEmail}</span>
+                        <span className="ml-2 text-xs uppercase text-zinc-500">{invite.role}</span>
+                      </div>
+                      {memberState.currentUserRole === "owner" ? (
+                        <button
+                          className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={updatingInviteId === invite._id}
+                          onClick={() => void onRevokeInvite(invite._id)}
+                          type="button"
+                        >
+                          {updatingInviteId === invite._id ? "Revoking..." : "Revoke"}
+                        </button>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

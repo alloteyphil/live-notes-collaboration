@@ -37,9 +37,7 @@ export const listByWorkspace = query({
       identity.tokenIdentifier,
     );
 
-    if (!membership) {
-      throw new Error("Forbidden");
-    }
+    if (!membership) return [];
 
     if (args.includeArchived) {
       return ctx.db
@@ -68,7 +66,7 @@ export const getById = query({
     const identity = await requireIdentity(ctx);
     const note = await ctx.db.get(args.noteId);
     if (!note) {
-      throw new Error("Note not found");
+      return null;
     }
 
     const membership = await getMembership(
@@ -76,9 +74,7 @@ export const getById = query({
       note.workspaceId,
       identity.tokenIdentifier,
     );
-    if (!membership) {
-      throw new Error("Forbidden");
-    }
+    if (!membership) return null;
 
     return {
       ...note,

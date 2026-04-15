@@ -147,6 +147,31 @@ export const claimInvites = mutation({
   },
 });
 
+export const listMyPendingInvites = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await requireIdentity(ctx);
+    const email = identity.email ? normalizeEmail(identity.email) : null;
+    if (!email) {
+      return [];
+    }
+
+    const invites = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_invited_email_and_status", (q) =>
+        q.eq("invitedEmail", email).eq("status", "pending"),
+      )
+      .take(100);
+
+    return invites.map((invite) => ({
+      _id: invite._id,
+      workspaceId: invite.workspaceId,
+      role: invite.role,
+      createdAt: invite.createdAt,
+    }));
+  },
+});
+
 export const inviteMember = mutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -186,6 +211,28 @@ export const inviteMember = mutation({
   },
 });
 
+export const revokeInvite = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    inviteId: v.id("workspaceInvites"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    await requireWorkspaceOwner(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite || invite.workspaceId !== args.workspaceId) {
+      throw new Error("Invite not found");
+    }
+    if (invite.status !== "pending") {
+      throw new Error("Only pending invites can be revoked");
+    }
+
+    await ctx.db.delete(args.inviteId);
+    return { ok: true };
+  },
+});
+
 export const listMembers = query({
   args: {
     workspaceId: v.id("workspaces"),
@@ -197,9 +244,7 @@ export const listMembers = query({
       args.workspaceId,
       identity.tokenIdentifier,
     );
-    if (!membership) {
-      throw new Error("Forbidden");
-    }
+    if (!membership) return null;
 
     const workspaceMembers = await ctx.db
       .query("workspaceMembers")

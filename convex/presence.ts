@@ -106,7 +106,11 @@ export const listByNote = query({
   },
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
-    await requireWorkspaceMembership(ctx, args.noteId, identity.tokenIdentifier);
+    try {
+      await requireWorkspaceMembership(ctx, args.noteId, identity.tokenIdentifier);
+    } catch {
+      return [];
+    }
 
     const now = Date.now();
     const candidates = await ctx.db

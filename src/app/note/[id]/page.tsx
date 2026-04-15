@@ -7,9 +7,12 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
+import { useToast } from "@/components/toast-provider";
 
 type SaveStatus = "idle" | "typing" | "saving" | "saved" | "error";
 const AUTOSAVE_DEBOUNCE_MS = 220;
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_MAX_DELAY_MS = 15_000;
 
 const avatarClasses = [
   "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
@@ -36,6 +39,7 @@ const getInitials = (name: string) => {
 
 export default function NoteEditorPage() {
   const { data: session, isPending } = authClient.useSession();
+  const { showToast } = useToast();
   const params = useParams<{ id: string }>();
   const noteId = params.id as Id<"notes">;
 
@@ -54,11 +58,18 @@ export default function NoteEditorPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [retryNeeded, setRetryNeeded] = useState(false);
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof window === "undefined" ? true : window.navigator.onLine,
+  );
 
   const lastSyncedRef = useRef({ title: "", content: "" });
   const previousCanEditRef = useRef<boolean | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasShownOfflineToastRef = useRef(false);
   const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined);
 
   const title = titleInput;
@@ -71,8 +82,27 @@ export default function NoteEditorPage() {
     return new Date(effectiveLastSavedAt).toLocaleTimeString();
   }, [effectiveLastSavedAt]);
 
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
   const flushSave = useCallback(async () => {
     if (!note || !canEdit || (!titleDirty && !contentDirty)) return;
+    if (!isOnline) {
+      setSaveStatus("error");
+      setRetryNeeded(true);
+      setFeedback("You are offline. Changes will retry when connection is restored.");
+      return;
+    }
     try {
       setSaveStatus("saving");
       if (titleDirty) {
@@ -86,16 +116,44 @@ export default function NoteEditorPage() {
       setContentDirty(false);
       setLastSavedAt(Date.now());
       setSaveStatus("saved");
+      if (retryNeeded || retryAttempt > 0) {
+        showToast({ message: "Connection restored. Note saved.", variant: "success" });
+      }
+      setRetryNeeded(false);
+      setRetryAttempt(0);
       setFeedback("All changes saved.");
     } catch (error) {
       setSaveStatus("error");
-      setFeedback(error instanceof Error ? error.message : "Failed to save note.");
+      setRetryNeeded(true);
+      setRetryAttempt((current) => current + 1);
+      const message = error instanceof Error ? error.message : "Failed to save note.";
+      setFeedback(message);
+      if (retryAttempt === 0) {
+        showToast({ message: "Save failed. Retrying automatically...", variant: "error" });
+      }
     }
-  }, [canEdit, content, contentDirty, note, noteId, title, titleDirty, updateContent, updateTitle]);
+  }, [
+    canEdit,
+    content,
+    contentDirty,
+    isOnline,
+    note,
+    noteId,
+    retryAttempt,
+    retryNeeded,
+    showToast,
+    title,
+    titleDirty,
+    updateContent,
+    updateTitle,
+  ]);
 
   const flushSaveNow = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
     }
     void flushSave();
   }, [flushSave]);
@@ -146,6 +204,8 @@ export default function NoteEditorPage() {
         setTitleDirty(false);
         setContentDirty(false);
         setIsTyping(false);
+        setRetryNeeded(false);
+        setRetryAttempt(0);
         setSaveStatus("idle");
         setFeedback("Your role changed to viewer. Editing is now disabled.");
       });
@@ -163,6 +223,10 @@ export default function NoteEditorPage() {
 
   const statusLabel = !canEdit
     ? "Read-only"
+    : !isOnline
+      ? "Offline"
+      : retryNeeded
+        ? `Retrying (${retryAttempt})`
     : saveStatus === "typing"
       ? "Typing..."
       : saveStatus === "saving"
@@ -172,6 +236,43 @@ export default function NoteEditorPage() {
           : saveStatus === "error"
             ? "Save error"
             : "Idle";
+
+  useEffect(() => {
+    if (!canEdit) return;
+    if (!isOnline) {
+      if (!hasShownOfflineToastRef.current) {
+        hasShownOfflineToastRef.current = true;
+        showToast({
+          message: "You are offline. We will retry saves when connection returns.",
+          variant: "info",
+        });
+      }
+      return;
+    }
+    hasShownOfflineToastRef.current = false;
+  }, [canEdit, isOnline, showToast]);
+
+  useEffect(() => {
+    if (!retryNeeded || !canEdit || !note || (!titleDirty && !contentDirty)) {
+      return;
+    }
+    if (!isOnline) return;
+
+    const delay = Math.min(
+      RETRY_BASE_DELAY_MS * 2 ** Math.max(retryAttempt - 1, 0),
+      RETRY_MAX_DELAY_MS,
+    );
+
+    retryTimerRef.current = setTimeout(() => {
+      void flushSave();
+    }, delay);
+
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
+    };
+  }, [canEdit, contentDirty, flushSave, isOnline, note, retryAttempt, retryNeeded, titleDirty]);
 
   useEffect(() => {
     if (!note) return;
@@ -233,6 +334,9 @@ export default function NoteEditorPage() {
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current);
       }
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
     };
   }, []);
 
@@ -262,6 +366,20 @@ export default function NoteEditorPage() {
     return <main className="mx-auto mt-10 w-full max-w-4xl px-4">Loading note...</main>;
   }
 
+  if (note === null) {
+    return (
+      <main className="mx-auto mt-10 w-full max-w-4xl space-y-4 px-4">
+        <h1 className="text-2xl font-semibold">Note access removed</h1>
+        <p className="text-sm text-zinc-600">
+          You no longer have access to this note. Return to your dashboard.
+        </p>
+        <Link className="text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
+          Back to Dashboard
+        </Link>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto mt-10 w-full max-w-4xl space-y-5 px-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -278,6 +396,12 @@ export default function NoteEditorPage() {
           </p>
         </div>
       </header>
+
+      {!isOnline ? (
+        <section className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Connection lost. Editing continues locally and saves will retry automatically.
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <h2 className="mb-2 text-sm font-medium text-zinc-700">Collaborators in this note</h2>

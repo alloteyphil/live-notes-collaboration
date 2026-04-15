@@ -34,7 +34,8 @@
 
 - [x] Presence indicators by note.
 - [x] Typing indicator and collaborator identity chips.
-- [ ] Role matrix hardening for all mutations (remove member, role changes).
+- [x] Role matrix hardening for member mutations (remove member, role changes).
+- [x] Revoke pending invites (owner-only).
 - [ ] Retry and error UX for save failures.
 - [ ] Pagination for large workspace/note sets.
 
@@ -44,3 +45,8 @@
 - [ ] README case study and architecture diagram.
 - [ ] Demo video/GIF.
 - [ ] Deploy and capture production URL.
+
+## Phase 6: Future Features
+
+- [ ] Realtime whiteboard per workspace (deferred).
+- [ ] Workspace screen share for live collaboration sessions (deferred).

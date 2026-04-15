@@ -9,17 +9,37 @@ import { api } from "../../../convex/_generated/api";
 export default function DashboardPage() {
   const { data: session, isPending } = authClient.useSession();
   const workspaces = useQuery(api.workspaces.list, session ? {} : "skip");
+  const pendingInvites = useQuery(api.workspaces.listMyPendingInvites, session ? {} : "skip");
   const createWorkspace = useMutation(api.workspaces.create);
   const claimInvites = useMutation(api.workspaces.claimInvites);
 
   const [workspaceName, setWorkspaceName] = useState("");
   const [feedback, setFeedback] = useState("");
   const [isCreating, setIsCreating] = useState(false);
-  const hasClaimedInvitesRef = useRef(false);
+  const claimInFlightRef = useRef(false);
+  const lastClaimAttemptRef = useRef<string>("");
 
   useEffect(() => {
-    if (!session || hasClaimedInvitesRef.current) return;
-    hasClaimedInvitesRef.current = true;
+    if (!session) {
+      claimInFlightRef.current = false;
+      lastClaimAttemptRef.current = "";
+      return;
+    }
+
+    if (pendingInvites === undefined || pendingInvites.length === 0) {
+      return;
+    }
+
+    const inviteFingerprint = pendingInvites.map((invite) => invite._id).sort().join(",");
+    if (inviteFingerprint === lastClaimAttemptRef.current) {
+      return;
+    }
+
+    if (claimInFlightRef.current) return;
+
+    claimInFlightRef.current = true;
+    lastClaimAttemptRef.current = inviteFingerprint;
+
     void claimInvites()
       .then((result) => {
         if (result.claimed > 0) {
@@ -27,9 +47,12 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {
-        // Keep dashboard usable even if invite sync fails.
+        // Keep dashboard usable even if invite claim fails.
+      })
+      .finally(() => {
+        claimInFlightRef.current = false;
       });
-  }, [claimInvites, session]);
+  }, [claimInvites, pendingInvites, session]);
 
   const emptyStateMessage = useMemo(() => {
     if (workspaces === undefined) return "Loading workspaces...";
