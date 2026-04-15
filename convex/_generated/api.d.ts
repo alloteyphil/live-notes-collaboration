@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
 import type * as presence from "../presence.js";
+import type * as whiteboards from "../whiteboards.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   notes: typeof notes;
   presence: typeof presence;
+  whiteboards: typeof whiteboards;
   workspaces: typeof workspaces;
 }>;
 

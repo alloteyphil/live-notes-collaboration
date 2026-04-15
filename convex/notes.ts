@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -55,6 +56,49 @@ export const listByWorkspace = query({
         q.eq("workspaceId", args.workspaceId).eq("isArchived", false),
       )
       .take(50);
+  },
+});
+
+export const listByWorkspacePaginated = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    includeArchived: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const membership = await getMembership(
+      ctx,
+      args.workspaceId,
+      identity.tokenIdentifier,
+    );
+
+    if (!membership) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+        splitCursor: null,
+        pageStatus: null,
+      };
+    }
+
+    if (args.includeArchived) {
+      return ctx.db
+        .query("notes")
+        .withIndex("by_workspace_id_and_updated_at", (q) =>
+          q.eq("workspaceId", args.workspaceId),
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
+    }
+
+    return ctx.db
+      .query("notes")
+      .withIndex("by_workspace_id_and_is_archived", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("isArchived", false),
+      )
+      .paginate(args.paginationOpts);
   },
 });
 

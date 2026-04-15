@@ -36,17 +36,18 @@
 - [x] Typing indicator and collaborator identity chips.
 - [x] Role matrix hardening for member mutations (remove member, role changes).
 - [x] Revoke pending invites (owner-only).
-- [ ] Retry and error UX for save failures.
-- [ ] Pagination for large workspace/note sets.
+- [x] Retry and error UX for save failures.
+- [x] Pagination for large workspace/note sets.
 
 ## Phase 5: Portfolio Polish
 
-- [ ] Component library pass (buttons, inputs, cards).
+- [x] Component library pass (buttons, inputs, cards).
+- [x] UI consistency uplift across core routes (shared shell, icons, state surfaces).
 - [ ] README case study and architecture diagram.
 - [ ] Demo video/GIF.
 - [ ] Deploy and capture production URL.
 
 ## Phase 6: Future Features
 
-- [ ] Realtime whiteboard per workspace (deferred).
+- [x] Realtime whiteboard per workspace (MVP via Excalidraw embed).
 - [ ] Workspace screen share for live collaboration sessions (deferred).

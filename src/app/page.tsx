@@ -1,6 +1,12 @@
 "use client";
 
 import { authClient } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Icons } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { StateMessage } from "@/components/ui/state-message";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
@@ -10,8 +16,6 @@ export default function HomePage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
-  const inputClassName =
-    "w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none ring-fuchsia-300 transition focus:ring-2";
 
   const signUp = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,160 +50,135 @@ export default function HomePage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-linear-to-b from-fuchsia-50 via-white to-cyan-50 px-4 py-10">
-      <div className="pointer-events-none absolute -left-24 top-12 h-72 w-72 rounded-full bg-fuchsia-300/30 blur-3xl" />
-      <div className="pointer-events-none absolute -right-20 top-36 h-80 w-80 rounded-full bg-cyan-300/30 blur-3xl" />
-
-      <div className="mx-auto w-full max-w-6xl space-y-8">
-        <section className="grid items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-5">
-            <span className="inline-flex rounded-full border border-fuchsia-200 bg-white/70 px-3 py-1 text-xs font-semibold text-fuchsia-700">
-              Live Notes • Better Auth • Convex • Next.js
-            </span>
-            <h1 className="text-4xl font-bold tracking-tight text-zinc-900 sm:text-5xl">
-              A lively starting point for your realtime notes app.
-            </h1>
-            <p className="max-w-xl text-base text-zinc-600">
-              This homepage is designed as a reference: playful gradients, soft surfaces, strong
-              CTAs, and clear product storytelling you can reuse across dashboard and editor pages.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/dashboard"
-                className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-zinc-700"
-              >
-                Explore dashboard
-              </Link>
-              <span className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-600">
-                Tailwind v4 design baseline
+    <main className="app-container space-y-8">
+      <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <PageHeader
+          description="Collaborative note-taking with realtime presence, autosave, and workspace permissions."
+          title="Live Notes"
+        />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Project status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-zinc-600">Core collaboration features are running in production-ready shape.</p>
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700">
+                <Icons.users className="h-3.5 w-3.5" />
+                Workspace roles
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700">
+                <Icons.note className="h-3.5 w-3.5" />
+                Autosave editor
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700">
+                <Icons.folder className="h-3.5 w-3.5" />
+                Paginated lists
               </span>
             </div>
-            <div className="grid gap-3 text-sm text-zinc-600 sm:grid-cols-3">
-              <div className="rounded-xl border border-white/60 bg-white/80 p-3 shadow-sm">Realtime-ready UX</div>
-              <div className="rounded-xl border border-white/60 bg-white/80 p-3 shadow-sm">Clean auth flow</div>
-              <div className="rounded-xl border border-white/60 bg-white/80 p-3 shadow-sm">CV-friendly visuals</div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {isPending ? <p className="text-sm text-zinc-600">Loading session...</p> : null}
+
+      {!isPending && session ? (
+        <Card>
+          <CardContent className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm text-zinc-500">Signed in as</p>
+              <p className="font-semibold text-zinc-900">{session.user.email}</p>
             </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-xl shadow-fuchsia-100 backdrop-blur">
-            <p className="mb-4 text-sm font-medium text-zinc-600">Quick preview card</p>
-            <div className="space-y-3">
-              <div className="rounded-xl bg-zinc-900 p-4 text-white">
-                <p className="text-xs text-zinc-300">Current stack</p>
-                <p className="mt-1 text-sm font-medium">Next.js + Convex + Better Auth + Tailwind</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-zinc-200 bg-white p-3">
-                  <p className="text-xs text-zinc-500">Features</p>
-                  <p className="mt-1 text-sm font-semibold text-zinc-800">Workspaces</p>
-                </div>
-                <div className="rounded-xl border border-zinc-200 bg-white p-3">
-                  <p className="text-xs text-zinc-500">Status</p>
-                  <p className="mt-1 text-sm font-semibold text-emerald-600">Ready to build</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {isPending ? <p className="text-sm text-zinc-600">Loading session...</p> : null}
-
-        {!isPending && session ? (
-          <section className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-              <div>
-                <p className="text-sm text-zinc-500">Signed in as</p>
-                <p className="font-semibold text-zinc-900">{session.user.email}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Link
-                  className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-                  href="/dashboard"
-                >
+            <div className="flex items-center gap-3">
+              <Button asChild>
+                <Link href="/dashboard">
                   Open dashboard
+                  <Icons.forward />
                 </Link>
-                <button
-                  onClick={signOut}
-                  type="button"
-                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium transition hover:bg-zinc-100"
-                >
-                  Sign out
-                </button>
-              </div>
+              </Button>
+              <Button onClick={signOut} variant="secondary">
+                <Icons.logout />
+                Sign out
+              </Button>
             </div>
-          </section>
-        ) : (
-          <section className="grid gap-5 lg:grid-cols-2">
-            <form
-              onSubmit={signUp}
-              className="space-y-3 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm"
-            >
-              <h2 className="text-xl font-semibold text-zinc-900">Create account</h2>
+          </CardContent>
+        </Card>
+      ) : (
+        <section className="grid gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Create account</CardTitle>
+            </CardHeader>
+            <CardContent>
               <p className="text-sm text-zinc-500">Start your first workspace and invite collaborators.</p>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Name"
-                className={inputClassName}
-              />
-              <input
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="Email"
-                type="email"
-                className={inputClassName}
-              />
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Password"
-                type="password"
-                className={inputClassName}
-              />
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700"
-              >
-                Sign up
-              </button>
-            </form>
+              <form className="space-y-3" onSubmit={signUp}>
+                <Input
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Name"
+                  value={name}
+                />
+                <Input
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="Email"
+                  type="email"
+                  value={email}
+                />
+                <Input
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Password"
+                  type="password"
+                  value={password}
+                />
+                <Button className="w-full" type="submit">
+                  <Icons.plus />
+                  Sign up
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
 
-            <form
-              onSubmit={signIn}
-              className="space-y-3 rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm"
-            >
-              <h2 className="text-xl font-semibold text-zinc-900">Sign in</h2>
-              <p className="text-sm text-zinc-500">Welcome back. Continue building your product.</p>
-              <input
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="Email"
-                type="email"
-                className={inputClassName}
-              />
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Password"
-                type="password"
-                className={inputClassName}
-              />
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-linear-to-r from-fuchsia-600 to-cyan-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
-              >
-                Sign in
-              </button>
-            </form>
-          </section>
-        )}
+          <Card>
+            <CardHeader>
+              <CardTitle>Sign in</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-zinc-500">Welcome back. Continue where you left off.</p>
+              <form className="space-y-3" onSubmit={signIn}>
+                <Input
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="Email"
+                  type="email"
+                  value={email}
+                />
+                <Input
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Password"
+                  type="password"
+                  value={password}
+                />
+                <Button className="w-full" type="submit">
+                  <Icons.forward />
+                  Sign in
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
-        {message ? (
-          <p className="rounded-xl border border-zinc-200 bg-white p-3 text-sm text-zinc-700 shadow-sm">
-            {message}
-          </p>
-        ) : null}
-      </div>
+      {message ? (
+        <StateMessage
+          variant={
+            message.toLowerCase().includes("failed")
+              ? "error"
+              : message.toLowerCase().includes("signed out")
+                ? "muted"
+                : "success"
+          }
+        >
+          {message}
+        </StateMessage>
+      ) : null}
     </main>
   );
 }

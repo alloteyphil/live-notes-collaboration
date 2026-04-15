@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -14,6 +15,7 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 };
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const isNotNull = <T>(value: T | null): value is T => value !== null;
 
 const requireWorkspaceMembership = async (
   ctx: QueryCtx | MutationCtx,
@@ -69,7 +71,69 @@ export const list = query({
           role: membership.role,
         };
       })
-      .filter((workspace) => workspace !== null);
+      .filter(isNotNull);
+  },
+});
+
+export const listPaginated = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const memberships = await ctx.db
+      .query("workspaceMembers")
+      .withIndex("by_token_identifier", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier),
+      )
+      .paginate(args.paginationOpts);
+
+    const workspaces = await Promise.all(
+      memberships.page.map((membership) => ctx.db.get(membership.workspaceId)),
+    );
+
+    return {
+      ...memberships,
+      page: memberships.page
+        .map((membership, index) => {
+          const workspace = workspaces[index];
+          if (!workspace) {
+            return null;
+          }
+          return {
+            ...workspace,
+            role: membership.role,
+          };
+        })
+        .filter(isNotNull),
+    };
+  },
+});
+
+export const getById = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const membership = await requireWorkspaceMembership(
+      ctx,
+      args.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!membership) {
+      return null;
+    }
+
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) {
+      return null;
+    }
+
+    return {
+      ...workspace,
+      role: membership.role,
+    };
   },
 });
 
@@ -260,6 +324,17 @@ export const listMembers = query({
       )
       .take(100);
 
+    const acceptedInvites = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_workspace_id_and_status", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("status", "accepted"),
+      )
+      .take(100);
+
+    const memberByToken = new Map(
+      workspaceMembers.map((member) => [member.tokenIdentifier, member] as const),
+    );
+
     return {
       currentUserRole: membership.role,
       currentUserTokenIdentifier: identity.tokenIdentifier,
@@ -280,6 +355,21 @@ export const listMembers = query({
         role: invite.role,
         createdAt: invite.createdAt,
       })),
+      acceptedInvites: acceptedInvites
+        .map((invite) => ({
+          _id: invite._id,
+          invitedEmail: invite.invitedEmail,
+          role: invite.role,
+          createdAt: invite.createdAt,
+          acceptedAt: invite.acceptedAt ?? null,
+          acceptedByDisplayName: invite.acceptedByTokenIdentifier
+            ? memberByToken.get(invite.acceptedByTokenIdentifier)?.displayName ??
+              memberByToken.get(invite.acceptedByTokenIdentifier)?.userEmail ??
+              `Member ${invite.acceptedByTokenIdentifier.slice(0, 6)}`
+            : null,
+        }))
+        .sort((a, b) => (b.acceptedAt ?? 0) - (a.acceptedAt ?? 0))
+        .slice(0, 20),
     };
   },
 });

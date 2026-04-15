@@ -8,6 +8,16 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 import { useToast } from "@/components/toast-provider";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icons } from "@/components/ui/icons";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StateMessage } from "@/components/ui/state-message";
+import { Textarea } from "@/components/ui/textarea";
 
 type SaveStatus = "idle" | "typing" | "saving" | "saved" | "error";
 const AUTOSAVE_DEBOUNCE_MS = 220;
@@ -347,64 +357,101 @@ export default function NoteEditorPage() {
     ) ?? [];
 
   if (isPending) {
-    return <main className="mx-auto mt-10 w-full max-w-4xl px-4">Loading session...</main>;
+    return (
+      <main className="app-container space-y-4">
+        <Skeleton className="h-10 w-60" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </main>
+    );
   }
 
   if (!session) {
     return (
-      <main className="mx-auto mt-10 w-full max-w-4xl space-y-4 px-4">
-        <h1 className="text-2xl font-semibold">Note Editor</h1>
-        <p className="text-sm text-zinc-600">You need to sign in to edit notes.</p>
-        <Link className="text-sm font-medium text-blue-600 hover:underline" href="/">
-          Go to sign in
-        </Link>
+      <main className="app-container space-y-4">
+        <PageHeader description="Sign in to edit and collaborate on notes." title="Note Editor" />
+        <EmptyState
+          action={
+            <Link className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline" href="/">
+              Go to sign in
+              <Icons.forward className="h-4 w-4" />
+            </Link>
+          }
+          description="Your notes and collaborator presence will appear once authenticated."
+          icon={Icons.note}
+          title="Sign in required"
+        />
       </main>
     );
   }
 
   if (note === undefined) {
-    return <main className="mx-auto mt-10 w-full max-w-4xl px-4">Loading note...</main>;
+    return (
+      <main className="app-container space-y-4">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </main>
+    );
   }
 
   if (note === null) {
     return (
-      <main className="mx-auto mt-10 w-full max-w-4xl space-y-4 px-4">
-        <h1 className="text-2xl font-semibold">Note access removed</h1>
-        <p className="text-sm text-zinc-600">
-          You no longer have access to this note. Return to your dashboard.
-        </p>
-        <Link className="text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
-          Back to Dashboard
-        </Link>
+      <main className="app-container space-y-4">
+        <PageHeader description="Your permissions changed for this note." title="Note access removed" />
+        <EmptyState
+          action={
+            <Link
+              className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline"
+              href="/dashboard"
+            >
+              <Icons.back className="h-4 w-4" />
+              Back to Dashboard
+            </Link>
+          }
+          description="Return to your dashboard to continue in a workspace you can access."
+          icon={Icons.alert}
+          title="Access revoked"
+        />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto mt-10 w-full max-w-4xl space-y-5 px-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <Link className="text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
-          Back to Dashboard
-        </Link>
-        <div className="text-right">
-          <p className="text-sm text-zinc-600">
-            Status:{" "}
-            <span className="font-medium text-zinc-800">{statusLabel}</span>
-          </p>
-          <p className="text-xs text-zinc-500">
-            Active collaborators: {activeCollaborators?.length ?? 0}
-          </p>
-        </div>
-      </header>
+    <main className="app-container space-y-5">
+      <PageHeader
+        actions={
+          <Link className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
+            <Icons.back className="h-4 w-4" />
+            Back to Dashboard
+          </Link>
+        }
+        description={`Active collaborators: ${activeCollaborators?.length ?? 0}`}
+        title={note.title || "Untitled Note"}
+      />
+
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-zinc-600">Status</span>
+        <Badge
+          className="normal-case"
+          variant={!isOnline ? "warning" : saveStatus === "error" ? "danger" : "default"}
+        >
+          {statusLabel}
+        </Badge>
+      </div>
 
       {!isOnline ? (
-        <section className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <StateMessage variant="warning">
           Connection lost. Editing continues locally and saves will retry automatically.
-        </section>
+        </StateMessage>
       ) : null}
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-sm font-medium text-zinc-700">Collaborators in this note</h2>
+      <Card className="rounded-xl shadow-sm">
+        <CardHeader className="mb-2">
+          <CardTitle className="text-sm text-zinc-700">Collaborators in this note</CardTitle>
+        </CardHeader>
         {activeCollaborators === undefined ? (
           <p className="text-sm text-zinc-500">Loading collaborators...</p>
         ) : activeCollaborators.length === 0 ? (
@@ -443,53 +490,61 @@ export default function NoteEditorPage() {
             {typingCollaborators.length > 1 ? "are" : "is"} typing...
           </p>
         ) : null}
-      </section>
+      </Card>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <label className="mb-2 block text-xs font-medium uppercase text-zinc-500">Title</label>
-        <input
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-lg font-semibold outline-none ring-zinc-400 focus:ring-2"
-          disabled={!canEdit}
-          onChange={(event) => {
-            if (!canEdit) return;
-            setTitleInput(event.target.value);
-            setTitleDirty(true);
-            setSaveStatus("typing");
-            markTyping();
-          }}
-          onBlur={() => {
-            if (canEdit) flushSaveNow();
-          }}
-          placeholder="Untitled note"
-          value={title}
-        />
-      </section>
+      <Card className="rounded-xl shadow-sm">
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="note-title">Title</Label>
+            <Input
+              className="mt-2 text-lg font-semibold"
+              disabled={!canEdit}
+              id="note-title"
+              onBlur={() => {
+                if (canEdit) flushSaveNow();
+              }}
+              onChange={(event) => {
+                if (!canEdit) return;
+                setTitleInput(event.target.value);
+                setTitleDirty(true);
+                setSaveStatus("typing");
+                markTyping();
+              }}
+              placeholder="Untitled note"
+              value={title}
+            />
+          </div>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <label className="mb-2 block text-xs font-medium uppercase text-zinc-500">Content</label>
-        <textarea
-          className="min-h-[360px] w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm leading-6 outline-none ring-zinc-400 focus:ring-2"
-          disabled={!canEdit}
-          onChange={(event) => {
-            if (!canEdit) return;
-            setContentInput(event.target.value);
-            setContentDirty(true);
-            setSaveStatus("typing");
-            setCursorPosition(event.target.selectionStart);
-            markTyping();
-          }}
-          onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-          onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-          onBlur={() => {
-            if (canEdit) flushSaveNow();
-          }}
-          onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-          placeholder="Start writing your note..."
-          value={content}
-        />
-      </section>
+          <div>
+            <Label htmlFor="note-content">Content</Label>
+            <Textarea
+              className="mt-2 min-h-[420px] leading-6"
+              disabled={!canEdit}
+              id="note-content"
+              onBlur={() => {
+                if (canEdit) flushSaveNow();
+              }}
+              onChange={(event) => {
+                if (!canEdit) return;
+                setContentInput(event.target.value);
+                setContentDirty(true);
+                setSaveStatus("typing");
+                setCursorPosition(event.target.selectionStart);
+                markTyping();
+              }}
+              onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+              onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+              onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+              placeholder="Start writing your note..."
+              value={content}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-      {feedback ? <p className="text-sm text-zinc-600">{feedback}</p> : null}
+      {feedback ? (
+        <StateMessage variant={saveStatus === "error" ? "error" : "muted"}>{feedback}</StateMessage>
+      ) : null}
       <p className="text-xs text-zinc-500">
         Last saved: {formattedLastSavedAt} {hasUnsavedChanges ? "• Unsaved changes" : ""}
       </p>

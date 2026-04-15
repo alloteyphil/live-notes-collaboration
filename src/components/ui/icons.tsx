@@ -1,0 +1,31 @@
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  FolderOpen,
+  LayoutDashboard,
+  Loader2,
+  LogOut,
+  NotebookPen,
+  Plus,
+  UserPlus,
+  Users,
+} from "lucide-react";
+
+export const Icons = {
+  alert: AlertTriangle,
+  back: ArrowLeft,
+  check: CheckCircle2,
+  dashboard: LayoutDashboard,
+  file: FileText,
+  folder: FolderOpen,
+  forward: ArrowRight,
+  invite: UserPlus,
+  loader: Loader2,
+  logout: LogOut,
+  note: NotebookPen,
+  plus: Plus,
+  users: Users,
+} as const;

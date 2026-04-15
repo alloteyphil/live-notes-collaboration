@@ -50,6 +50,13 @@ export default defineSchema({
     .index("by_workspace_id_and_updated_at", ["workspaceId", "updatedAt"])
     .index("by_workspace_id_and_is_archived", ["workspaceId", "isArchived"]),
 
+  whiteboards: defineTable({
+    workspaceId: v.id("workspaces"),
+    sceneData: v.string(),
+    updatedByTokenIdentifier: v.string(),
+    updatedAt: v.number(),
+  }).index("by_workspace_id", ["workspaceId"]),
+
   presence: defineTable({
     noteId: v.id("notes"),
     tokenIdentifier: v.string(),
