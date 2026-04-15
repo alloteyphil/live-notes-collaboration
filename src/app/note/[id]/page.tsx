@@ -9,6 +9,30 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
 type SaveStatus = "idle" | "typing" | "saving" | "saved" | "error";
+const AUTOSAVE_DEBOUNCE_MS = 220;
+
+const avatarClasses = [
+  "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
+  "bg-cyan-100 text-cyan-700 border-cyan-200",
+  "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "bg-amber-100 text-amber-700 border-amber-200",
+  "bg-violet-100 text-violet-700 border-violet-200",
+];
+
+const getAvatarClass = (seed: string) => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash + seed.charCodeAt(i) * (i + 1)) % avatarClasses.length;
+  }
+  return avatarClasses[hash];
+};
+
+const getInitials = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+};
 
 export default function NoteEditorPage() {
   const { data: session, isPending } = authClient.useSession();
@@ -16,8 +40,11 @@ export default function NoteEditorPage() {
   const noteId = params.id as Id<"notes">;
 
   const note = useQuery(api.notes.getById, session ? { noteId } : "skip");
+  const activeCollaborators = useQuery(api.presence.listByNote, session ? { noteId } : "skip");
   const updateTitle = useMutation(api.notes.updateTitle);
   const updateContent = useMutation(api.notes.updateContent);
+  const heartbeat = useMutation(api.presence.heartbeat);
+  const leavePresence = useMutation(api.presence.leave);
 
   const [titleInput, setTitleInput] = useState("");
   const [contentInput, setContentInput] = useState("");
@@ -26,12 +53,15 @@ export default function NoteEditorPage() {
   const [feedback, setFeedback] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
 
   const lastSyncedRef = useRef({ title: "", content: "" });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined);
 
-  const title = titleDirty ? titleInput : note?.title ?? "";
-  const content = contentDirty ? contentInput : note?.content ?? "";
+  const title = titleInput;
+  const content = contentInput;
   const hasUnsavedChanges = titleDirty || contentDirty;
   const effectiveLastSavedAt = lastSavedAt ?? note?.updatedAt ?? null;
   const formattedLastSavedAt = useMemo(() => {
@@ -61,17 +91,50 @@ export default function NoteEditorPage() {
     }
   }, [content, contentDirty, note, noteId, title, titleDirty, updateContent, updateTitle]);
 
+  const flushSaveNow = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    void flushSave();
+  }, [flushSave]);
+
+  useEffect(() => {
+    if (!note) return;
+
+    const firstSync =
+      lastSyncedRef.current.title === "" && lastSyncedRef.current.content === "";
+    if (firstSync) {
+      queueMicrotask(() => {
+        setTitleInput(note.title);
+        setContentInput(note.content);
+      });
+      lastSyncedRef.current = { title: note.title, content: note.content };
+      return;
+    }
+
+    // Pull remote updates only when user has no unsaved local edits.
+    if (!titleDirty && !contentDirty) {
+      const remoteChanged =
+        note.title !== lastSyncedRef.current.title ||
+        note.content !== lastSyncedRef.current.content;
+      if (remoteChanged) {
+        queueMicrotask(() => {
+          setTitleInput(note.title);
+          setContentInput(note.content);
+        });
+        lastSyncedRef.current = { title: note.title, content: note.content };
+      }
+    }
+  }, [contentDirty, note, titleDirty]);
+
   useEffect(() => {
     if (!note) return;
     if (!titleDirty && !contentDirty) {
-      if (lastSyncedRef.current.title === "" && lastSyncedRef.current.content === "") {
-        lastSyncedRef.current = { title: note.title, content: note.content };
-      }
       return;
     }
     saveTimerRef.current = setTimeout(() => {
       void flushSave();
-    }, 700);
+    }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) {
@@ -86,14 +149,50 @@ export default function NoteEditorPage() {
         return;
       }
       event.preventDefault();
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-      void flushSave();
+      flushSaveNow();
     };
     window.addEventListener("keydown", onSaveShortcut);
     return () => window.removeEventListener("keydown", onSaveShortcut);
-  }, [flushSave]);
+  }, [flushSaveNow]);
+
+  useEffect(() => {
+    if (!session || !note) return;
+
+    const sendHeartbeat = () => {
+      void heartbeat({ noteId, cursorPosition, isTyping });
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 10_000);
+    return () => {
+      clearInterval(interval);
+      void leavePresence({ noteId });
+    };
+  }, [cursorPosition, heartbeat, isTyping, leavePresence, note, noteId, session]);
+
+  const markTyping = useCallback(() => {
+    setIsTyping(true);
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+    typingTimerRef.current = setTimeout(() => {
+      setIsTyping(false);
+    }, 1_500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+      }
+    };
+  }, []);
+
+  const typingCollaborators =
+    activeCollaborators?.filter(
+      (collaborator) =>
+        collaborator.isTyping && collaborator.userEmail !== (session?.user.email ?? null),
+    ) ?? [];
 
   if (isPending) {
     return <main className="mx-auto mt-10 w-full max-w-4xl px-4">Loading session...</main>;
@@ -121,17 +220,64 @@ export default function NoteEditorPage() {
         <Link className="text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
           Back to Dashboard
         </Link>
-        <p className="text-sm text-zinc-600">
-          Status:{" "}
-          <span className="font-medium text-zinc-800">
-            {saveStatus === "idle" && "Idle"}
-            {saveStatus === "typing" && "Typing..."}
-            {saveStatus === "saving" && "Saving..."}
-            {saveStatus === "saved" && "Saved"}
-            {saveStatus === "error" && "Save error"}
-          </span>
-        </p>
+        <div className="text-right">
+          <p className="text-sm text-zinc-600">
+            Status:{" "}
+            <span className="font-medium text-zinc-800">
+              {saveStatus === "idle" && "Idle"}
+              {saveStatus === "typing" && "Typing..."}
+              {saveStatus === "saving" && "Saving..."}
+              {saveStatus === "saved" && "Saved"}
+              {saveStatus === "error" && "Save error"}
+            </span>
+          </p>
+          <p className="text-xs text-zinc-500">
+            Active collaborators: {activeCollaborators?.length ?? 0}
+          </p>
+        </div>
       </header>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <h2 className="mb-2 text-sm font-medium text-zinc-700">Collaborators in this note</h2>
+        {activeCollaborators === undefined ? (
+          <p className="text-sm text-zinc-500">Loading collaborators...</p>
+        ) : activeCollaborators.length === 0 ? (
+          <p className="text-sm text-zinc-500">Only you are here right now.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-2">
+            {activeCollaborators.map((collaborator) => {
+              const isCurrentUser = collaborator.userEmail === session.user.email;
+              const avatarClass = getAvatarClass(collaborator.userEmail ?? collaborator.displayName);
+              return (
+                <li
+                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs ${avatarClass}`}
+                  key={collaborator._id}
+                >
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/70 text-[10px] font-semibold">
+                    {getInitials(collaborator.displayName)}
+                  </span>
+                  <span className="flex flex-col leading-tight">
+                    <span className="font-medium">
+                      {collaborator.displayName}
+                      {isCurrentUser ? " (You)" : ""}
+                      {collaborator.isTyping ? " • typing" : ""}
+                    </span>
+                    <span className="text-[10px] opacity-80">
+                      {collaborator.userEmail ?? "email not available"}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {typingCollaborators.length > 0 ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            {typingCollaborators.map((collaborator) => collaborator.displayName).join(", ")}{" "}
+            {typingCollaborators.length > 1 ? "are" : "is"} typing...
+          </p>
+        ) : null}
+      </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <label className="mb-2 block text-xs font-medium uppercase text-zinc-500">Title</label>
@@ -141,7 +287,9 @@ export default function NoteEditorPage() {
             setTitleInput(event.target.value);
             setTitleDirty(true);
             setSaveStatus("typing");
+            markTyping();
           }}
+          onBlur={flushSaveNow}
           placeholder="Untitled note"
           value={title}
         />
@@ -155,7 +303,13 @@ export default function NoteEditorPage() {
             setContentInput(event.target.value);
             setContentDirty(true);
             setSaveStatus("typing");
+            setCursorPosition(event.target.selectionStart);
+            markTyping();
           }}
+          onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+          onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+          onBlur={flushSaveNow}
+          onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
           placeholder="Start writing your note..."
           value={content}
         />

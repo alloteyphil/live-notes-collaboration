@@ -5,8 +5,8 @@
 - Frontend: Next.js (App Router) + TypeScript
 - Backend: Convex (queries, mutations, realtime subscriptions)
 - State/Data Fetching: Convex React client
-- Auth: Convex Auth integration (provider selected during implementation)
-- Styling: Keep minimal at start, then add Tailwind or component library later
+- Auth: Better Auth + Convex auth provider
+- Styling: Tailwind CSS v4
 - Hosting: Vercel (frontend) + Convex managed backend
 
 ## Why This Stack
@@ -28,7 +28,7 @@
 ## Core Modules
 
 - `src/app/`: routes and layout.
-- `src/components/`: editor, note list, presence UI.
+- `src/components/`: editor, note list, presence UI (planned extraction).
 - `src/lib/`: utility functions and client config.
 - `convex/`: backend schema, queries, and mutations.
 

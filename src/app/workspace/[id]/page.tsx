@@ -18,11 +18,17 @@ export default function WorkspaceDetailPage() {
     api.notes.listByWorkspace,
     session ? { workspaceId, includeArchived: false } : "skip",
   );
+  const memberState = useQuery(api.workspaces.listMembers, session ? { workspaceId } : "skip");
   const createNote = useMutation(api.notes.create);
+  const inviteMember = useMutation(api.workspaces.inviteMember);
 
   const [noteTitle, setNoteTitle] = useState("");
   const [feedback, setFeedback] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
+  const [inviteFeedback, setInviteFeedback] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
 
   const workspace = useMemo(
     () => workspaces?.find((item) => item._id === workspaceId),
@@ -48,6 +54,27 @@ export default function WorkspaceDetailPage() {
       setFeedback(error instanceof Error ? error.message : "Failed to create note.");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const onInviteMember = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedEmail = inviteEmail.trim();
+    if (!trimmedEmail) {
+      setInviteFeedback("Invite email is required.");
+      return;
+    }
+
+    setIsInviting(true);
+    setInviteFeedback("");
+    try {
+      await inviteMember({ workspaceId, email: trimmedEmail, role: inviteRole });
+      setInviteEmail("");
+      setInviteFeedback("Invite sent.");
+    } catch (error) {
+      setInviteFeedback(error instanceof Error ? error.message : "Failed to send invite.");
+    } finally {
+      setIsInviting(false);
     }
   };
 
@@ -78,6 +105,82 @@ export default function WorkspaceDetailPage() {
           Back to Dashboard
         </Link>
       </header>
+
+      <section className="rounded-lg border border-zinc-200 p-4">
+        <h2 className="mb-3 text-lg font-medium">Members</h2>
+        {memberState === undefined ? (
+          <p className="text-sm text-zinc-600">Loading members...</p>
+        ) : (
+          <div className="space-y-4">
+            <ul className="space-y-2">
+              {memberState.members.map((member) => (
+                <li
+                  className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2"
+                  key={member._id}
+                >
+                  <div>
+                    <p className="font-medium">{member.displayName}</p>
+                    <p className="text-xs text-zinc-500">{member.userEmail ?? "No email available"}</p>
+                  </div>
+                  <span className="text-xs uppercase text-zinc-500">{member.role}</span>
+                </li>
+              ))}
+            </ul>
+
+            {memberState.currentUserRole === "owner" ? (
+              <form className="space-y-2 rounded-md border border-zinc-200 p-3" onSubmit={onInviteMember}>
+                <h3 className="text-sm font-medium">Invite member</h3>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none ring-zinc-400 focus:ring-2"
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    placeholder="teammate@email.com"
+                    type="email"
+                    value={inviteEmail}
+                  />
+                  <select
+                    className="rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none ring-zinc-400 focus:ring-2"
+                    onChange={(event) => setInviteRole(event.target.value as "editor" | "viewer")}
+                    value={inviteRole}
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <button
+                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isInviting}
+                    type="submit"
+                  >
+                    {isInviting ? "Inviting..." : "Invite"}
+                  </button>
+                </div>
+                {inviteFeedback ? <p className="text-sm text-zinc-600">{inviteFeedback}</p> : null}
+              </form>
+            ) : (
+              <p className="text-sm text-zinc-600">Only workspace owners can invite members.</p>
+            )}
+
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Pending invites</h3>
+              {memberState.pendingInvites.length === 0 ? (
+                <p className="text-sm text-zinc-600">No pending invites.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {memberState.pendingInvites.map((invite) => (
+                    <li
+                      className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                      key={invite._id}
+                    >
+                      <span>{invite.invitedEmail}</span>
+                      <span className="text-xs uppercase text-zinc-500">{invite.role}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="rounded-lg border border-zinc-200 p-4">
         <h2 className="mb-3 text-lg font-medium">Create Note</h2>

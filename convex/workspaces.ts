@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+
+const inviteRoleValidator = v.union(v.literal("editor"), v.literal("viewer"));
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
   const identity = await ctx.auth.getUserIdentity();
@@ -8,6 +11,36 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
     throw new Error("Unauthorized");
   }
   return identity;
+};
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const requireWorkspaceMembership = async (
+  ctx: QueryCtx | MutationCtx,
+  workspaceId: Id<"workspaces">,
+  tokenIdentifier: string,
+) => {
+  return ctx.db
+    .query("workspaceMembers")
+    .withIndex("by_workspace_id_and_token_identifier", (q) =>
+      q.eq("workspaceId", workspaceId).eq("tokenIdentifier", tokenIdentifier),
+    )
+    .unique();
+};
+
+const requireWorkspaceOwner = async (
+  ctx: QueryCtx | MutationCtx,
+  workspaceId: Id<"workspaces">,
+  tokenIdentifier: string,
+) => {
+  const workspace = await ctx.db.get(workspaceId);
+  if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+  if (workspace.ownerTokenIdentifier !== tokenIdentifier) {
+    throw new Error("Forbidden");
+  }
+  return workspace;
 };
 
 export const list = query({
@@ -59,9 +92,147 @@ export const create = mutation({
       workspaceId,
       tokenIdentifier: identity.tokenIdentifier,
       role: "owner",
+      displayName: identity.name ?? undefined,
+      userEmail: identity.email ?? undefined,
       createdAt: now,
     });
 
     return workspaceId;
+  },
+});
+
+export const claimInvites = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await requireIdentity(ctx);
+    const email = identity.email ? normalizeEmail(identity.email) : null;
+    if (!email) {
+      return { claimed: 0 };
+    }
+
+    const invites = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_invited_email_and_status", (q) =>
+        q.eq("invitedEmail", email).eq("status", "pending"),
+      )
+      .take(50);
+
+    let claimed = 0;
+    for (const invite of invites) {
+      const existingMembership = await requireWorkspaceMembership(
+        ctx,
+        invite.workspaceId,
+        identity.tokenIdentifier,
+      );
+      if (!existingMembership) {
+        await ctx.db.insert("workspaceMembers", {
+          workspaceId: invite.workspaceId,
+          tokenIdentifier: identity.tokenIdentifier,
+          role: invite.role,
+          displayName: identity.name ?? undefined,
+          userEmail: email,
+          createdAt: Date.now(),
+        });
+        claimed += 1;
+      }
+
+      await ctx.db.patch(invite._id, {
+        status: "accepted",
+        acceptedByTokenIdentifier: identity.tokenIdentifier,
+        acceptedAt: Date.now(),
+      });
+    }
+
+    return { claimed };
+  },
+});
+
+export const inviteMember = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    email: v.string(),
+    role: inviteRoleValidator,
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    await requireWorkspaceOwner(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    const invitedEmail = normalizeEmail(args.email);
+    if (!invitedEmail) {
+      throw new Error("Invite email is required");
+    }
+
+    const existingPendingInvites = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_workspace_id_and_invited_email", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("invitedEmail", invitedEmail),
+      )
+      .take(20);
+
+    if (existingPendingInvites.some((invite) => invite.status === "pending")) {
+      throw new Error("A pending invite already exists for this email");
+    }
+
+    await ctx.db.insert("workspaceInvites", {
+      workspaceId: args.workspaceId,
+      invitedEmail,
+      role: args.role,
+      status: "pending",
+      invitedByTokenIdentifier: identity.tokenIdentifier,
+      createdAt: Date.now(),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const listMembers = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const membership = await requireWorkspaceMembership(
+      ctx,
+      args.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!membership) {
+      throw new Error("Forbidden");
+    }
+
+    const workspaceMembers = await ctx.db
+      .query("workspaceMembers")
+      .withIndex("by_workspace_id_and_token_identifier", (q) =>
+        q.eq("workspaceId", args.workspaceId),
+      )
+      .take(100);
+
+    const pendingInvites = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_workspace_id_and_status", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("status", "pending"),
+      )
+      .take(100);
+
+    return {
+      currentUserRole: membership.role,
+      members: workspaceMembers.map((member) => ({
+        _id: member._id,
+        role: member.role,
+        displayName:
+          member.displayName ??
+          member.userEmail ??
+          `Member ${member.tokenIdentifier.slice(0, 6)}`,
+        userEmail: member.userEmail ?? null,
+        createdAt: member.createdAt,
+      })),
+      pendingInvites: pendingInvites.map((invite) => ({
+        _id: invite._id,
+        invitedEmail: invite.invitedEmail,
+        role: invite.role,
+        createdAt: invite.createdAt,
+      })),
+    };
   },
 });

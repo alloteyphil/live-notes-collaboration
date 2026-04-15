@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
@@ -10,10 +10,26 @@ export default function DashboardPage() {
   const { data: session, isPending } = authClient.useSession();
   const workspaces = useQuery(api.workspaces.list, session ? {} : "skip");
   const createWorkspace = useMutation(api.workspaces.create);
+  const claimInvites = useMutation(api.workspaces.claimInvites);
 
   const [workspaceName, setWorkspaceName] = useState("");
   const [feedback, setFeedback] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const hasClaimedInvitesRef = useRef(false);
+
+  useEffect(() => {
+    if (!session || hasClaimedInvitesRef.current) return;
+    hasClaimedInvitesRef.current = true;
+    void claimInvites()
+      .then((result) => {
+        if (result.claimed > 0) {
+          setFeedback(`You joined ${result.claimed} invited workspace(s).`);
+        }
+      })
+      .catch(() => {
+        // Keep dashboard usable even if invite sync fails.
+      });
+  }, [claimInvites, session]);
 
   const emptyStateMessage = useMemo(() => {
     if (workspaces === undefined) return "Loading workspaces...";
