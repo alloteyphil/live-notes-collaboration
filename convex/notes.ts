@@ -60,6 +60,30 @@ export const listByWorkspace = query({
   },
 });
 
+export const getById = query({
+  args: {
+    noteId: v.id("notes"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const note = await ctx.db.get(args.noteId);
+    if (!note) {
+      throw new Error("Note not found");
+    }
+
+    const membership = await getMembership(
+      ctx,
+      note.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!membership) {
+      throw new Error("Forbidden");
+    }
+
+    return note;
+  },
+});
+
 export const create = mutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -87,6 +111,64 @@ export const create = mutation({
       updatedByTokenIdentifier: identity.tokenIdentifier,
       createdAt: now,
       updatedAt: now,
+    });
+  },
+});
+
+export const updateTitle = mutation({
+  args: {
+    noteId: v.id("notes"),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const note = await ctx.db.get(args.noteId);
+    if (!note) {
+      throw new Error("Note not found");
+    }
+
+    const membership = await getMembership(
+      ctx,
+      note.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!membership || membership.role === "viewer") {
+      throw new Error("Forbidden");
+    }
+
+    await ctx.db.patch(args.noteId, {
+      title: args.title.trim(),
+      updatedByTokenIdentifier: identity.tokenIdentifier,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const updateContent = mutation({
+  args: {
+    noteId: v.id("notes"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const note = await ctx.db.get(args.noteId);
+    if (!note) {
+      throw new Error("Note not found");
+    }
+
+    const membership = await getMembership(
+      ctx,
+      note.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!membership || membership.role === "viewer") {
+      throw new Error("Forbidden");
+    }
+
+    await ctx.db.patch(args.noteId, {
+      content: args.content,
+      updatedByTokenIdentifier: identity.tokenIdentifier,
+      updatedAt: Date.now(),
     });
   },
 });
