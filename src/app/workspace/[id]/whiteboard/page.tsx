@@ -7,15 +7,14 @@ import { useMutation, useQuery } from "convex/react";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { api } from "../../../../../convex/_generated/api";
 import { ExcalidrawWrapper } from "@/components/excalidraw-wrapper";
+import { NavHeader } from "@/components/nav-header";
+import { PageHeader } from "@/components/page-header";
+import { SaveStatus } from "@/components/save-status";
+import { StatusBanner } from "@/components/status-banner";
 import { authClient } from "@/lib/auth-client";
 import { useToast } from "@/components/toast-provider";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Icons } from "@/components/ui/icons";
-import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StateMessage } from "@/components/ui/state-message";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -25,14 +24,8 @@ export default function WorkspaceWhiteboardPage() {
   const params = useParams<{ id: string }>();
   const workspaceId = params.id as Id<"workspaces">;
 
-  const workspace = useQuery(
-    api.workspaces.getById,
-    session ? { workspaceId } : "skip",
-  );
-  const whiteboardState = useQuery(
-    api.whiteboards.get,
-    session ? { workspaceId } : "skip",
-  );
+  const workspace = useQuery(api.workspaces.getById, session ? { workspaceId } : "skip");
+  const whiteboardState = useQuery(api.whiteboards.get, session ? { workspaceId } : "skip");
   const saveWhiteboard = useMutation(api.whiteboards.save);
 
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -61,18 +54,13 @@ export default function WorkspaceWhiteboardPage() {
   const onSceneChange = useCallback(
     async (sceneData: string) => {
       if (!canEdit) return;
-      if (sceneData === lastSavedSceneDataRef.current) {
-        return;
-      }
-
+      if (sceneData === lastSavedSceneDataRef.current) return;
       if (saveInFlightRef.current) {
         queuedSceneDataRef.current = sceneData;
         return;
       }
-
       saveInFlightRef.current = true;
       let sceneToSave: string | null = sceneData;
-
       while (sceneToSave) {
         try {
           setSaveState("saving");
@@ -94,125 +82,103 @@ export default function WorkspaceWhiteboardPage() {
           break;
         }
       }
-
       saveInFlightRef.current = false;
     },
     [canEdit, saveWhiteboard, showToast, workspaceId],
   );
 
-  if (isPending) {
-    return (
-      <main className="app-container space-y-4">
-        <Skeleton className="h-10 w-60" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-[560px] w-full" />
-      </main>
-    );
-  }
-
-  if (!session) {
-    return (
-      <main className="app-container space-y-4">
-        <PageHeader
-          description="Sign in to access workspace whiteboards."
-          title="Workspace Whiteboard"
-        />
-        <EmptyState
-          action={
-            <Button asChild>
-              <Link href="/">
-                Go to sign in
-                <Icons.forward />
-              </Link>
-            </Button>
-          }
-          description="Whiteboard data is available after authentication."
-          icon={Icons.note}
-          title="Sign in required"
-        />
-      </main>
-    );
-  }
-
-  if (whiteboardState === undefined) {
-    return (
-      <main className="app-container space-y-4">
-        <Skeleton className="h-10 w-60" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-[560px] w-full" />
-      </main>
-    );
-  }
-
-  if (whiteboardState === null) {
-    return (
-      <main className="app-container space-y-4">
-        <PageHeader
-          description="Your workspace access has changed."
-          title="Whiteboard unavailable"
-        />
-        <EmptyState
-          action={
-            <Button asChild variant="secondary">
-              <Link href="/dashboard">
-                <Icons.back />
-                Back to Dashboard
-              </Link>
-            </Button>
-          }
-          description="You no longer have permission to open this workspace whiteboard."
-          icon={Icons.alert}
-          title="Access removed"
-        />
-      </main>
-    );
-  }
-
   return (
-    <main className="app-container space-y-5">
-      <PageHeader
-        actions={
-          <Button asChild size="sm" variant="secondary">
-            <Link href={`/workspace/${workspaceId}`}>
-              <Icons.back />
-              Back to Workspace
-            </Link>
-          </Button>
-        }
-        description={`Workspace: ${workspace?.name ?? "Loading..."}`}
-        title="Workspace Whiteboard"
+    <div className="flex min-h-screen flex-col bg-background">
+      <NavHeader
+        isSignedIn={Boolean(session)}
+        sessionPending={isPending}
+        userEmail={session?.user.email}
+        onSignOut={async () => {
+          await authClient.signOut();
+        }}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Canvas</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-2 text-sm text-zinc-600">
-            <span>Status:</span>
-            <span className="font-medium text-zinc-900">{statusLabel}</span>
-            {lastSavedAt ? (
-              <span className="text-zinc-500">
-                • Last saved {new Date(lastSavedAt).toLocaleTimeString()}
-              </span>
-            ) : null}
+      <main className="flex flex-1 flex-col">
+        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <PageHeader
+              title="Whiteboard"
+              description={workspace?.name ?? "Workspace"}
+              backHref={`/workspace/${workspaceId}`}
+              backLabel="Workspace"
+            />
+            <SaveStatus
+              state={
+                !canEdit && whiteboardState
+                  ? "offline"
+                  : saveState === "saving"
+                    ? "saving"
+                    : saveState === "saved"
+                      ? "saved"
+                      : saveState === "error"
+                        ? "error"
+                        : "idle"
+              }
+              lastSaved={lastSavedAt ? new Date(lastSavedAt) : null}
+            />
           </div>
-          {!canEdit ? (
-            <StateMessage variant="warning">
-              You are a viewer in this workspace. Whiteboard editing is disabled.
-            </StateMessage>
-          ) : (
-            <StateMessage variant="info">
-              Live sync is enabled. Changes from collaborators appear automatically.
-            </StateMessage>
-          )}
-          <ExcalidrawWrapper
-            sceneData={whiteboardState.whiteboard?.sceneData ?? null}
-            onChange={onSceneChange}
-            readOnly={!canEdit}
-          />
-        </CardContent>
-      </Card>
-    </main>
+
+          {!session && !isPending ? (
+            <StatusBanner
+              variant="warning"
+              message="Sign in to access workspace whiteboards."
+              className="mb-4"
+            />
+          ) : null}
+          {whiteboardState === null ? (
+            <StatusBanner
+              variant="error"
+              message="You no longer have permission to open this workspace whiteboard."
+              className="mb-4"
+            />
+          ) : null}
+          {!canEdit && whiteboardState ? (
+            <StatusBanner
+              variant="info"
+              message="You're viewing this whiteboard in read-only mode. Editing is disabled."
+              className="mb-4"
+            />
+          ) : null}
+          {canEdit ? (
+            <StatusBanner
+              variant="success"
+              message="Live sync enabled. Your changes are synced in real-time with collaborators."
+              className="mb-4"
+            />
+          ) : null}
+
+          {isPending || whiteboardState === undefined ? (
+            <div className="space-y-4">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-[60vh] w-full" />
+            </div>
+          ) : whiteboardState ? (
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between border-b border-border px-4 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Status: <span className="font-medium text-foreground">{statusLabel}</span>
+                  {lastSavedAt ? ` • Last saved ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}
+                </p>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/workspace/${workspaceId}`}>Back to workspace</Link>
+                </Button>
+              </div>
+              <div className="h-[60vh] min-h-[400px] overflow-hidden bg-white">
+                <ExcalidrawWrapper
+                  sceneData={whiteboardState.whiteboard?.sceneData ?? null}
+                  onChange={onSceneChange}
+                  readOnly={!canEdit}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </main>
+    </div>
   );
 }

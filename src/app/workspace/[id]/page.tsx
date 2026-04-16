@@ -7,16 +7,35 @@ import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
+import { ContentCard } from "@/components/content-card";
+import { EmptyState } from "@/components/empty-state";
+import { NavHeader } from "@/components/nav-header";
+import { PageHeader } from "@/components/page-header";
+import { RoleBadge } from "@/components/role-badge";
+import { StatusBanner } from "@/components/status-banner";
 import { useToast } from "@/components/toast-provider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Icons } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/page-header";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StateMessage } from "@/components/ui/state-message";
+import {
+  Archive,
+  Check,
+  ChevronRight,
+  Clock,
+  FileText,
+  Loader2,
+  Mail,
+  Paintbrush,
+  Plus,
+  Send,
+  Trash2,
+  Undo2,
+  UserPlus,
+  X,
+} from "lucide-react";
 
 const getInviteErrorMessage = (error: unknown) => {
   if (!(error instanceof Error)) return "Failed to send invite.";
@@ -34,22 +53,25 @@ export default function WorkspaceDetailPage() {
   const { showToast } = useToast();
   const params = useParams<{ id: string }>();
   const workspaceId = params.id as Id<"workspaces">;
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [noteSearch, setNoteSearch] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
 
-  const workspace = useQuery(
-    api.workspaces.getById,
-    session ? { workspaceId } : "skip",
-  );
+  const workspace = useQuery(api.workspaces.getById, session ? { workspaceId } : "skip");
   const {
     results: notes,
     status: notesPaginationStatus,
     loadMore: loadMoreNotes,
   } = usePaginatedQuery(
     api.notes.listByWorkspacePaginated,
-    session ? { workspaceId, includeArchived: false } : "skip",
+    session ? { workspaceId, includeArchived } : "skip",
     { initialNumItems: 20 },
   );
   const memberState = useQuery(api.workspaces.listMembers, session ? { workspaceId } : "skip");
   const createNote = useMutation(api.notes.create);
+  const createFromTemplate = useMutation(api.notes.createFromTemplate);
+  const archiveNote = useMutation(api.notes.archive);
+  const deleteNote = useMutation(api.notes.remove);
   const inviteMember = useMutation(api.workspaces.inviteMember);
   const revokeInvite = useMutation(api.workspaces.revokeInvite);
   const updateMemberRole = useMutation(api.workspaces.updateMemberRole);
@@ -65,6 +87,13 @@ export default function WorkspaceDetailPage() {
   const [memberFeedback, setMemberFeedback] = useState("");
   const [updatingMemberToken, setUpdatingMemberToken] = useState<string | null>(null);
   const [updatingInviteId, setUpdatingInviteId] = useState<Id<"workspaceInvites"> | null>(null);
+  const searchNotes = useQuery(
+    api.notes.searchNotes,
+    session && noteSearch.trim()
+      ? { workspaceId, searchTerm: noteSearch.trim(), limit: 10 }
+      : "skip",
+  );
+  const templates = useQuery(api.notes.listTemplates, session ? { workspaceId } : "skip");
 
   const onCreateNote = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -76,7 +105,6 @@ export default function WorkspaceDetailPage() {
 
     setIsCreating(true);
     setFeedback("");
-
     try {
       await createNote({ workspaceId, title: trimmedTitle });
       setNoteTitle("");
@@ -91,6 +119,61 @@ export default function WorkspaceDetailPage() {
     }
   };
 
+  const onCreateFromTemplate = async () => {
+    if (!selectedTemplateId) {
+      return;
+    }
+    setIsCreating(true);
+    setFeedback("");
+    try {
+      const isDefaultTemplate = selectedTemplateId.startsWith("default:");
+      await createFromTemplate({
+        workspaceId,
+        templateId: isDefaultTemplate
+          ? undefined
+          : (selectedTemplateId as Id<"noteTemplates">),
+        defaultTemplateTitle: isDefaultTemplate
+          ? selectedTemplateId.replace("default:", "")
+          : undefined,
+      });
+      setSelectedTemplateId("");
+      setFeedback("Note created from template.");
+      showToast({ message: "Note created from template.", variant: "success" });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create note from template.";
+      setFeedback(message);
+      showToast({ message, variant: "error" });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const onToggleArchive = async (noteId: Id<"notes">, archived: boolean) => {
+    try {
+      await archiveNote({ noteId, archived: !archived });
+      showToast({
+        message: archived ? "Note unarchived." : "Note archived.",
+        variant: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update note archive.";
+      setFeedback(message);
+      showToast({ message, variant: "error" });
+    }
+  };
+
+  const onDeleteNote = async (noteId: Id<"notes">) => {
+    try {
+      await deleteNote({ noteId });
+      showToast({ message: "Note deleted.", variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete note.";
+      setFeedback(message);
+      showToast({ message, variant: "error" });
+    }
+  };
+
   const onInviteMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedEmail = inviteEmail.trim();
@@ -98,13 +181,12 @@ export default function WorkspaceDetailPage() {
       setInviteFeedback("Invite email is required.");
       return;
     }
-
     setIsInviting(true);
     setInviteFeedback("");
     try {
       await inviteMember({ workspaceId, email: trimmedEmail, role: inviteRole });
       setInviteEmail("");
-      setInviteFeedback("Invite sent.");
+      setInviteFeedback(`Invite sent to ${trimmedEmail}`);
       showToast({ message: "Invite sent.", variant: "success" });
     } catch (error) {
       const message = getInviteErrorMessage(error);
@@ -115,10 +197,7 @@ export default function WorkspaceDetailPage() {
     }
   };
 
-  const onUpdateMemberRole = async (
-    memberTokenIdentifier: string,
-    role: "editor" | "viewer",
-  ) => {
+  const onUpdateMemberRole = async (memberTokenIdentifier: string, role: "editor" | "viewer") => {
     setUpdatingMemberToken(memberTokenIdentifier);
     setMemberFeedback("");
     try {
@@ -166,340 +245,451 @@ export default function WorkspaceDetailPage() {
     }
   };
 
-  if (isPending) {
-    return (
-      <main className="app-container space-y-4">
-        <Skeleton className="h-10 w-52" />
-        <Skeleton className="h-80 w-full" />
-        <Skeleton className="h-72 w-full" />
-      </main>
-    );
-  }
-
-  if (!session) {
-    return (
-      <main className="app-container space-y-4">
-        <PageHeader description="You need a signed-in account to access workspace notes." title="Workspace" />
-        <EmptyState
-          action={
-            <Button asChild>
-              <Link href="/">
-                Go to sign in
-                <Icons.forward />
-              </Link>
-            </Button>
-          }
-          description="Authentication is required before workspace data is available."
-          icon={Icons.users}
-          title="Sign in required"
-        />
-      </main>
-    );
-  }
-
-  if (memberState === null) {
-    return (
-      <main className="app-container space-y-4">
-        <PageHeader
-          description="Your membership was removed or your permissions changed."
-          title="Workspace access removed"
-        />
-        <EmptyState
-          action={
-            <Button asChild variant="secondary">
-              <Link href="/dashboard">
-                <Icons.back />
-                Back to Dashboard
-              </Link>
-            </Button>
-          }
-          description="Return to your dashboard and choose another workspace."
-          icon={Icons.alert}
-          title="You no longer have access"
-        />
-      </main>
-    );
-  }
-
   return (
-    <main className="app-container space-y-6">
-      <PageHeader
-        actions={
-          <Button asChild size="sm" variant="secondary">
-            <Link href="/dashboard">
-              <Icons.back />
-              Back to Dashboard
-            </Link>
-          </Button>
-        }
-        description="Create notes, manage members, and handle invites."
-        title={workspace?.name ?? "Workspace"}
+    <div className="min-h-screen bg-background">
+      <NavHeader
+        isSignedIn={Boolean(session)}
+        sessionPending={isPending}
+        userEmail={session?.user.email}
+        onSignOut={async () => {
+          await authClient.signOut();
+        }}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Whiteboard</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-zinc-600">
-            Sketch ideas and collaborate visually in this workspace.
-          </p>
-          <Button asChild>
-            <Link href={`/workspace/${workspaceId}/whiteboard`}>
-              <Icons.note />
-              Open whiteboard
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <div className="space-y-8">
+          <PageHeader
+            title={workspace?.name ?? "Workspace"}
+            description="Create notes, manage members, and handle invites."
+            backHref="/dashboard"
+            backLabel="Dashboard"
+            actions={
+              memberState ? <RoleBadge role={memberState.currentUserRole} /> : null
+            }
+          />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Members</CardTitle>
-        </CardHeader>
-        {memberState === undefined ? (
-          <div className="space-y-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : (
-          <CardContent className="space-y-4">
-            <ul className="space-y-2">
-              {memberState.members.map((member) => (
-                <li
-                  className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2"
-                  key={member._id}
-                >
-                  <div>
-                    <p className="font-medium">{member.displayName}</p>
-                    <p className="text-xs text-zinc-500">{member.userEmail ?? "No email available"}</p>
-                  </div>
-                  {memberState.currentUserRole === "owner" && member.role !== "owner" ? (
-                    <div className="flex items-center gap-2">
-                      <select
-                        className="rounded-md border border-zinc-300 px-2 py-1 text-xs outline-none ring-zinc-400 focus:ring-2"
-                        disabled={updatingMemberToken === member.tokenIdentifier}
-                        onChange={(event) =>
-                          void onUpdateMemberRole(
-                            member.tokenIdentifier,
-                            event.target.value as "editor" | "viewer",
-                          )
-                        }
-                        value={member.role}
-                      >
-                        <option value="editor">Editor</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
-                      <Button
-                        disabled={updatingMemberToken === member.tokenIdentifier}
-                        onClick={() => void onRemoveMember(member.tokenIdentifier)}
-                        size="sm"
-                        type="button"
-                        variant="danger"
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <Badge className="capitalize" variant="muted">
-                      {member.role}
-                    </Badge>
-                  )}
-                </li>
-              ))}
-            </ul>
-            {memberFeedback ? (
-              <StateMessage variant={memberFeedback.includes("updated") ? "success" : "muted"}>
-                {memberFeedback}
-              </StateMessage>
-            ) : null}
-
-            {memberState.currentUserRole === "owner" ? (
-              <form className="space-y-2 rounded-md border border-zinc-200 p-3" onSubmit={onInviteMember}>
-                <h3 className="text-sm font-medium">Invite member</h3>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    onChange={(event) => setInviteEmail(event.target.value)}
-                    placeholder="teammate@email.com"
-                    type="email"
-                    value={inviteEmail}
-                  />
-                  <select
-                    className="app-select"
-                    onChange={(event) => setInviteRole(event.target.value as "editor" | "viewer")}
-                    value={inviteRole}
-                  >
-                    <option value="editor">Editor</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                  <Button disabled={isInviting} isLoading={isInviting} type="submit">
-                    <Icons.invite />
-                    {isInviting ? "Inviting..." : "Invite"}
-                  </Button>
-                </div>
-                {inviteFeedback ? (
-                  <StateMessage
-                    variant={
-                      inviteFeedback.includes("sent") || inviteFeedback.includes("revoked")
-                        ? "success"
-                        : inviteFeedback.includes("required") || inviteFeedback.includes("pending")
-                          ? "warning"
-                          : "error"
-                    }
-                  >
-                    {inviteFeedback}
-                  </StateMessage>
-                ) : null}
-              </form>
-            ) : (
-              <p className="text-sm text-zinc-600">Only workspace owners can invite members.</p>
-            )}
-
-            <div>
-              <h3 className="mb-2 text-sm font-medium">Pending invites</h3>
-              {memberState.pendingInvites.length === 0 ? (
-                <p className="text-sm text-zinc-600">No pending invites.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {memberState.pendingInvites.map((invite) => (
-                    <li
-                      className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 text-sm"
-                      key={invite._id}
-                    >
-                      <div>
-                        <span>{invite.invitedEmail}</span>
-                        <Badge className="ml-2 capitalize" variant="muted">
-                          {invite.role}
-                        </Badge>
-                      </div>
-                      {memberState.currentUserRole === "owner" ? (
-                        <Button
-                          disabled={updatingInviteId === invite._id}
-                          onClick={() => void onRevokeInvite(invite._id)}
-                          size="sm"
-                          type="button"
-                          variant="danger"
-                        >
-                          {updatingInviteId === invite._id ? "Revoking..." : "Revoke"}
-                        </Button>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
+          {isPending || memberState === undefined ? (
+            <div className="space-y-3">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-96 w-full" />
             </div>
+          ) : null}
 
-            <div>
-              <h3 className="mb-2 text-sm font-medium">Accepted invite history</h3>
-              {memberState.acceptedInvites.length === 0 ? (
-                <EmptyState
-                  className="py-4"
-                  description="Accepted invites will appear here for audit visibility."
-                  icon={Icons.users}
-                  title="No accepted invites yet"
-                />
-              ) : (
-                <ul className="space-y-2">
-                  {memberState.acceptedInvites.map((invite) => (
-                    <li
-                      className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 text-sm"
-                      key={invite._id}
-                    >
+          {!session && !isPending ? (
+            <ContentCard>
+              <EmptyState
+                title="Sign in required"
+                description="Authentication is required before workspace data is available."
+                action={
+                  <Button asChild>
+                    <Link href="/">Go to sign in</Link>
+                  </Button>
+                }
+              />
+            </ContentCard>
+          ) : null}
+
+          {memberState === null ? (
+            <ContentCard>
+              <EmptyState
+                title="Access removed"
+                description="You no longer have permission to open this workspace."
+                action={
+                  <Button asChild variant="outline">
+                    <Link href="/dashboard">Back to Dashboard</Link>
+                  </Button>
+                }
+              />
+            </ContentCard>
+          ) : null}
+
+          {memberFeedback ? (
+            <StatusBanner
+              variant={memberFeedback.includes("updated") || memberFeedback.includes("removed") ? "success" : "error"}
+              message={memberFeedback}
+              onDismiss={() => setMemberFeedback("")}
+            />
+          ) : null}
+          {inviteFeedback ? (
+            <StatusBanner
+              variant={
+                inviteFeedback.includes("sent") || inviteFeedback.includes("revoked")
+                  ? "success"
+                  : inviteFeedback.includes("required") || inviteFeedback.includes("pending")
+                    ? "warning"
+                    : "error"
+              }
+              message={inviteFeedback}
+              onDismiss={() => setInviteFeedback("")}
+            />
+          ) : null}
+
+          {memberState ? (
+            <div className="grid gap-8 lg:grid-cols-2">
+              <div className="space-y-8">
+                <ContentCard title="Whiteboard" description="Sketch ideas together in real-time">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent">
+                        <Paintbrush className="h-6 w-6 text-primary" />
+                      </div>
                       <div>
-                        <p className="font-medium">{invite.invitedEmail}</p>
-                        <p className="text-xs text-zinc-500">
-                          Accepted by {invite.acceptedByDisplayName ?? "Unknown member"}
-                          {invite.acceptedAt ? ` • ${new Date(invite.acceptedAt).toLocaleString()}` : ""}
+                        <p className="font-medium text-card-foreground">Collaborative Canvas</p>
+                        <p className="text-sm text-muted-foreground">
+                          {memberState.currentUserRole === "viewer" ? "View only" : "Edit together"}
                         </p>
                       </div>
-                      <Badge className="capitalize" variant="muted">
-                        {invite.role}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    </div>
+                    <Button asChild>
+                      <Link href={`/workspace/${workspaceId}/whiteboard`}>
+                        Open
+                        <ChevronRight className="ml-1 h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                </ContentCard>
+
+                <ContentCard
+                  title="Notes"
+                  description={`${notes.length} note${notes.length !== 1 ? "s" : ""} in this workspace`}
+                  action={
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Search notes..."
+                        value={noteSearch}
+                        onChange={(event) => setNoteSearch(event.target.value)}
+                        className="h-8 w-48"
+                      />
+                      <Button
+                        variant={includeArchived ? "secondary" : "outline"}
+                        size="sm"
+                        onClick={() => setIncludeArchived((value) => !value)}
+                      >
+                        {includeArchived ? "Hide archived" : "Show archived"}
+                      </Button>
+                    </div>
+                  }
+                  contentClassName="p-0"
+                >
+                  <form onSubmit={onCreateNote} className="flex gap-3 border-b border-border p-4">
+                    <Input
+                      id="new-note-title"
+                      placeholder="Note title"
+                      value={noteTitle}
+                      onChange={(event) => setNoteTitle(event.target.value)}
+                      disabled={memberState.currentUserRole === "viewer" || isCreating}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="submit"
+                      disabled={
+                        memberState.currentUserRole === "viewer" || isCreating || !noteTitle.trim()
+                      }
+                    >
+                      {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
+                    </Button>
+                  </form>
+                  {memberState.currentUserRole !== "viewer" ? (
+                    <div className="flex items-center gap-3 border-b border-border p-4">
+                      <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                        <SelectTrigger className="w-72">
+                          <SelectValue placeholder="Create from template..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(templates ?? []).map((template) => (
+                            <SelectItem key={template._id} value={template._id}>
+                              {template.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void onCreateFromTemplate()}
+                        disabled={!selectedTemplateId || isCreating}
+                      >
+                        Use template
+                      </Button>
+                    </div>
+                  ) : null}
+                  {noteSearch.trim() ? (
+                    <div className="border-b border-border p-4">
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Search results
+                      </p>
+                      {searchNotes && searchNotes.length > 0 ? (
+                        <div className="space-y-2">
+                          {searchNotes.map((result) => (
+                            <Link
+                              key={result._id}
+                              href={`/note/${result._id}`}
+                              className="block rounded-md border border-border px-3 py-2 hover:bg-accent/40"
+                            >
+                              <p className="text-sm font-medium text-card-foreground">{result.title}</p>
+                              <p className="text-xs text-muted-foreground">{result.snippet || "No preview available"}</p>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No notes found.</p>
+                      )}
+                    </div>
+                  ) : null}
+                  {notesPaginationStatus === "LoadingFirstPage" ? (
+                    <div className="space-y-2 p-4">
+                      <Skeleton className="h-12 w-full" />
+                      <Skeleton className="h-12 w-full" />
+                      <Skeleton className="h-12 w-full" />
+                    </div>
+                  ) : notes.length === 0 ? (
+                    <div className="p-6">
+                      <EmptyState
+                        icon={FileText}
+                        title="No notes yet"
+                        description="Create your first note to start documenting."
+                        action={
+                          memberState.currentUserRole !== "viewer" ? (
+                            <Button onClick={() => document.getElementById("new-note-title")?.focus()}>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create Note
+                            </Button>
+                          ) : null
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {notes.map((note) => (
+                        <div key={note._id} className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-accent/50">
+                          <Link
+                            href={`/note/${note._id}`}
+                            className="flex min-w-0 flex-1 items-center gap-4"
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h4 className="truncate font-medium text-card-foreground">
+                                {note.title}
+                              </h4>
+                              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                Updated {new Date(note.updatedAt).toLocaleString()}
+                                {note.isArchived ? " • Archived" : ""}
+                              </p>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                          </Link>
+                          {memberState.currentUserRole !== "viewer" ? (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={() => void onToggleArchive(note._id, note.isArchived)}
+                                title={note.isArchived ? "Unarchive note" : "Archive note"}
+                              >
+                                {note.isArchived ? (
+                                  <Undo2 className="h-4 w-4" />
+                                ) : (
+                                  <Archive className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={() => void onDeleteNote(note._id)}
+                                title="Delete note"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {notesPaginationStatus === "CanLoadMore" ? (
+                    <div className="border-t border-border px-6 py-4">
+                      <Button variant="outline" size="sm" onClick={() => loadMoreNotes(20)}>
+                        Load more
+                      </Button>
+                    </div>
+                  ) : null}
+                </ContentCard>
+                {feedback ? (
+                  <StatusBanner
+                    variant={feedback.includes("created") ? "success" : "error"}
+                    message={feedback}
+                    onDismiss={() => setFeedback("")}
+                  />
+                ) : null}
+              </div>
+
+              <div className="space-y-8">
+                <ContentCard
+                  title="Members"
+                  description={`${memberState.members.length} member${memberState.members.length !== 1 ? "s" : ""}`}
+                  contentClassName="space-y-6"
+                >
+                  <div className="space-y-3">
+                    {memberState.members.map((member) => (
+                      <div key={member._id} className="flex items-center gap-3 rounded-lg border border-border p-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                          {member.displayName.charAt(0)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-card-foreground">{member.displayName}</p>
+                          <p className="truncate text-xs text-muted-foreground">{member.userEmail ?? "No email available"}</p>
+                        </div>
+                        {memberState.currentUserRole === "owner" && member.role !== "owner" ? (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={member.role}
+                              onValueChange={(value) =>
+                                void onUpdateMemberRole(member.tokenIdentifier, value as "editor" | "viewer")
+                              }
+                              disabled={updatingMemberToken === member.tokenIdentifier}
+                            >
+                              <SelectTrigger className="h-8 w-24">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="editor">Editor</SelectItem>
+                                <SelectItem value="viewer">Viewer</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => void onRemoveMember(member.tokenIdentifier)}
+                              disabled={updatingMemberToken === member.tokenIdentifier}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <RoleBadge role={member.role} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {memberState.currentUserRole === "owner" ? (
+                    <>
+                      <Separator />
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <UserPlus className="h-4 w-4 text-muted-foreground" />
+                          <Label className="text-sm font-medium">Invite new member</Label>
+                        </div>
+                        <form onSubmit={onInviteMember} className="space-y-3">
+                          <div className="flex gap-2">
+                            <div className="relative flex-1">
+                              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                type="email"
+                                placeholder="Email address"
+                                value={inviteEmail}
+                                onChange={(event) => setInviteEmail(event.target.value)}
+                                disabled={isInviting}
+                                className="pl-9"
+                              />
+                            </div>
+                            <Select
+                              value={inviteRole}
+                              onValueChange={(value) => setInviteRole(value as "editor" | "viewer")}
+                              disabled={isInviting}
+                            >
+                              <SelectTrigger className="w-28">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="editor">Editor</SelectItem>
+                                <SelectItem value="viewer">Viewer</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="w-full">
+                            {isInviting ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Sending...
+                              </>
+                            ) : (
+                              <>
+                                <Send className="mr-2 h-4 w-4" />
+                                Send Invite
+                              </>
+                            )}
+                          </Button>
+                        </form>
+                      </div>
+                    </>
+                  ) : null}
+
+                  <Separator />
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-muted-foreground">Pending Invites</Label>
+                    {memberState.pendingInvites.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No pending invites.</p>
+                    ) : (
+                      memberState.pendingInvites.map((invite) => (
+                        <div
+                          key={invite._id}
+                          className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-card-foreground">{invite.invitedEmail}</p>
+                          </div>
+                          <RoleBadge role={invite.role} showIcon={false} />
+                          {memberState.currentUserRole === "owner" ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => void onRevokeInvite(invite._id)}
+                              disabled={updatingInviteId === invite._id}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <Separator />
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium text-muted-foreground">Invite History</Label>
+                    {memberState.acceptedInvites.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No accepted invites yet.</p>
+                    ) : (
+                      memberState.acceptedInvites.map((invite) => (
+                        <div key={invite._id} className="flex items-center gap-3 rounded-lg border border-border p-3 opacity-60">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success/10">
+                            <Check className="h-4 w-4 text-success" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-card-foreground">{invite.invitedEmail}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Accepted by {invite.acceptedByDisplayName ?? "Unknown member"}
+                            </p>
+                          </div>
+                          <span className="text-xs font-medium text-success">Joined</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </ContentCard>
+              </div>
             </div>
-          </CardContent>
-        )}
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Create Note</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={onCreateNote}>
-            <Input
-              id="new-note-title"
-              onChange={(event) => setNoteTitle(event.target.value)}
-              placeholder="Meeting notes"
-              value={noteTitle}
-            />
-            <Button disabled={isCreating} isLoading={isCreating} type="submit">
-              <Icons.plus />
-              {isCreating ? "Creating..." : "Create"}
-            </Button>
-          </form>
-          {feedback ? (
-            <StateMessage variant={feedback.includes("created") ? "success" : "error"}>
-              {feedback}
-            </StateMessage>
           ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Notes</CardTitle>
-        </CardHeader>
-        {notesPaginationStatus === "LoadingFirstPage" ? (
-          <div className="space-y-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : notes.length === 0 ? (
-          <EmptyState
-            action={
-              <Button onClick={() => document.getElementById("new-note-title")?.focus()} size="sm">
-                <Icons.plus />
-                Create first note
-              </Button>
-            }
-            description="Notes in this workspace will appear here."
-            icon={Icons.note}
-            title="No notes yet"
-          />
-        ) : (
-          <div className="space-y-3">
-            <ul className="space-y-2">
-              {notes.map((note) => (
-                <li className="rounded-md border border-zinc-200 px-3 py-2" key={note._id}>
-                  <Button asChild className="h-auto p-0 text-left font-medium" variant="ghost">
-                    <Link href={`/note/${note._id}`}>{note.title}</Link>
-                  </Button>
-                  <p className="text-xs text-zinc-500">
-                    Updated {new Date(note.updatedAt).toLocaleString()}
-                  </p>
-                </li>
-              ))}
-            </ul>
-            {notesPaginationStatus === "CanLoadMore" ? (
-              <Button onClick={() => loadMoreNotes(20)} variant="secondary">
-                Load more
-              </Button>
-            ) : null}
-            {notesPaginationStatus === "LoadingMore" ? (
-              <StateMessage variant="info">Loading more notes...</StateMessage>
-            ) : null}
-            {notesPaginationStatus === "Exhausted" && notes.length > 0 ? (
-              <StateMessage variant="muted">You have reached the end of the note list.</StateMessage>
-            ) : null}
-          </div>
-        )}
-      </Card>
-    </main>
+        </div>
+      </main>
+    </div>
   );
 }

@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
+import { Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -15,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Live Notes",
-  description: "Realtime notes with Better Auth and Convex",
+  title: "Live Notes - Collaborative Notes & Workspaces",
+  description:
+    "Real-time collaborative notes with workspaces, presence, and whiteboard. Work together seamlessly.",
 };
 
 export default function RootLayout({
@@ -25,25 +25,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body className="app-shell">
+    <html lang="en" className={`${inter.variable} ${geistMono.variable} bg-background`}>
+      <body className="font-sans antialiased min-h-screen">
         <Providers>
-          <header className="app-header">
-            <div className="app-container flex h-14 items-center justify-between">
-              <Link className="text-sm font-semibold tracking-tight" href="/">
-                Live Notes
-              </Link>
-              <nav className="flex items-center gap-5 text-sm">
-                <Link className="app-muted transition hover:text-zinc-900" href="/">
-                  Home
-                </Link>
-                <Link className="app-muted transition hover:text-zinc-900" href="/dashboard">
-                  Dashboard
-                </Link>
-              </nav>
-            </div>
-          </header>
-          <div className="app-main">{children}</div>
+          {children}
         </Providers>
       </body>
     </html>

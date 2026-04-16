@@ -13,6 +13,15 @@ A portfolio-focused realtime notes app built with:
 - `convex/` - schema and backend functions.
 - `docs/` - product, architecture, and runbook documentation.
 
+## Latest Feature Additions
+
+- Note lifecycle: archive, unarchive, and delete notes.
+- Comment threads with resolve/reopen state.
+- `@email` mention parsing in comments with backend notifications.
+- Note revision history with restore flow.
+- Workspace note search and template-based note creation.
+- Hardened admin reset guardrails (`ADMIN_EMAILS` allowlist + whiteboard reset coverage).
+
 ## Docs Index
 
 - Product

@@ -21,6 +21,7 @@ export default defineSchema({
       "workspaceId",
       "tokenIdentifier",
     ])
+    .index("by_workspace_id_and_user_email", ["workspaceId", "userEmail"])
     .index("by_token_identifier", ["tokenIdentifier"]),
 
   workspaceInvites: defineTable({
@@ -48,7 +49,64 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_workspace_id_and_updated_at", ["workspaceId", "updatedAt"])
-    .index("by_workspace_id_and_is_archived", ["workspaceId", "isArchived"]),
+    .index("by_workspace_id_and_is_archived", ["workspaceId", "isArchived"])
+    .searchIndex("search_content", {
+      searchField: "content",
+      filterFields: ["workspaceId", "isArchived"],
+    }),
+
+  noteRevisions: defineTable({
+    noteId: v.id("notes"),
+    workspaceId: v.id("workspaces"),
+    title: v.string(),
+    content: v.string(),
+    createdByTokenIdentifier: v.string(),
+    createdAt: v.number(),
+    reason: v.optional(v.string()),
+  }).index("by_note_id_and_created_at", ["noteId", "createdAt"]),
+
+  noteComments: defineTable({
+    noteId: v.id("notes"),
+    workspaceId: v.id("workspaces"),
+    authorTokenIdentifier: v.string(),
+    authorDisplayName: v.string(),
+    authorEmail: v.optional(v.string()),
+    content: v.string(),
+    mentionEmails: v.array(v.string()),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    resolvedByTokenIdentifier: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_note_id_and_created_at", ["noteId", "createdAt"])
+    .index("by_note_id_and_status", ["noteId", "status"]),
+
+  notifications: defineTable({
+    tokenIdentifier: v.string(),
+    type: v.union(v.literal("mention"), v.literal("comment")),
+    title: v.string(),
+    body: v.string(),
+    workspaceId: v.id("workspaces"),
+    noteId: v.optional(v.id("notes")),
+    commentId: v.optional(v.id("noteComments")),
+    isRead: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_token_identifier_and_is_read", ["tokenIdentifier", "isRead"])
+    .index("by_token_identifier_and_created_at", ["tokenIdentifier", "createdAt"])
+    .index("by_note_id", ["noteId"]),
+
+  noteTemplates: defineTable({
+    scope: v.union(v.literal("global"), v.literal("workspace")),
+    workspaceId: v.optional(v.id("workspaces")),
+    title: v.string(),
+    content: v.string(),
+    createdByTokenIdentifier: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_scope_and_created_at", ["scope", "createdAt"])
+    .index("by_workspace_id_and_created_at", ["workspaceId", "createdAt"]),
 
   whiteboards: defineTable({
     workspaceId: v.id("workspaces"),

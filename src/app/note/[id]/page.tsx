@@ -2,50 +2,27 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { api } from "../../../../convex/_generated/api";
+import { NavHeader } from "@/components/nav-header";
+import { PresenceAvatars } from "@/components/presence-avatars";
+import { SaveStatus } from "@/components/save-status";
+import { StatusBanner } from "@/components/status-banner";
 import { authClient } from "@/lib/auth-client";
 import { useToast } from "@/components/toast-provider";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Icons } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/ui/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
-import { StateMessage } from "@/components/ui/state-message";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { ChevronLeft, Clock, Lock, MessageSquare, RefreshCw, Trash2, Undo2, Users } from "lucide-react";
 
-type SaveStatus = "idle" | "typing" | "saving" | "saved" | "error";
+type SaveState = "idle" | "typing" | "saving" | "saved" | "error";
 const AUTOSAVE_DEBOUNCE_MS = 220;
-const RETRY_BASE_DELAY_MS = 1_000;
-const RETRY_MAX_DELAY_MS = 15_000;
-
-const avatarClasses = [
-  "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
-  "bg-cyan-100 text-cyan-700 border-cyan-200",
-  "bg-emerald-100 text-emerald-700 border-emerald-200",
-  "bg-amber-100 text-amber-700 border-amber-200",
-  "bg-violet-100 text-violet-700 border-violet-200",
-];
-
-const getAvatarClass = (seed: string) => {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash + seed.charCodeAt(i) * (i + 1)) % avatarClasses.length;
-  }
-  return avatarClasses[hash];
-};
-
-const getInitials = (name: string) => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-};
+const RETRY_BASE_DELAY_MS = 1000;
+const RETRY_MAX_DELAY_MS = 15000;
 
 export default function NoteEditorPage() {
   const { data: session, isPending } = authClient.useSession();
@@ -57,15 +34,30 @@ export default function NoteEditorPage() {
   const activeCollaborators = useQuery(api.presence.listByNote, session ? { noteId } : "skip");
   const updateTitle = useMutation(api.notes.updateTitle);
   const updateContent = useMutation(api.notes.updateContent);
+  const archiveNote = useMutation(api.notes.archive);
+  const deleteNote = useMutation(api.notes.remove);
+  const createComment = useMutation(api.comments.create);
+  const resolveComment = useMutation(api.comments.resolve);
+  const restoreRevision = useMutation(api.notes.restoreRevision);
   const heartbeat = useMutation(api.presence.heartbeat);
   const leavePresence = useMutation(api.presence.leave);
+  const comments = useQuery(api.comments.listByNote, session ? { noteId } : "skip");
+  const {
+    results: revisions,
+    status: revisionsStatus,
+    loadMore: loadMoreRevisions,
+  } = usePaginatedQuery(
+    api.notes.listRevisions,
+    session ? { noteId } : "skip",
+    { initialNumItems: 8 },
+  );
 
   const [titleInput, setTitleInput] = useState("");
   const [contentInput, setContentInput] = useState("");
   const [titleDirty, setTitleDirty] = useState(false);
   const [contentDirty, setContentDirty] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveState>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
@@ -73,34 +65,31 @@ export default function NoteEditorPage() {
   const [isOnline, setIsOnline] = useState(() =>
     typeof window === "undefined" ? true : window.navigator.onLine,
   );
+  const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isRestoringRevisionId, setIsRestoringRevisionId] = useState<string | null>(null);
 
   const lastSyncedRef = useRef({ title: "", content: "" });
   const previousCanEditRef = useRef<boolean | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasShownOfflineToastRef = useRef(false);
   const cursorPositionRef = useRef<number | undefined>(undefined);
   const isTypingRef = useRef(false);
-  const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined);
 
   const title = titleInput;
   const content = contentInput;
   const canEdit = note?.canEdit ?? false;
+  const canEditThisNote = canEdit && !(note?.isArchived ?? false);
   const hasUnsavedChanges = titleDirty || contentDirty;
   const effectiveLastSavedAt = lastSavedAt ?? note?.updatedAt ?? null;
-  const formattedLastSavedAt = useMemo(() => {
-    if (!effectiveLastSavedAt) return "Not saved yet";
-    return new Date(effectiveLastSavedAt).toLocaleTimeString();
-  }, [effectiveLastSavedAt]);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
     const onOffline = () => setIsOnline(false);
-
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
@@ -108,7 +97,7 @@ export default function NoteEditorPage() {
   }, []);
 
   const flushSave = useCallback(async () => {
-    if (!note || !canEdit || (!titleDirty && !contentDirty)) return;
+    if (!note || !canEditThisNote || (!titleDirty && !contentDirty)) return;
     if (!isOnline) {
       setSaveStatus("error");
       setRetryNeeded(true);
@@ -145,7 +134,7 @@ export default function NoteEditorPage() {
       }
     }
   }, [
-    canEdit,
+    canEditThisNote,
     content,
     contentDirty,
     isOnline,
@@ -161,20 +150,14 @@ export default function NoteEditorPage() {
   ]);
 
   const flushSaveNow = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
-    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     void flushSave();
   }, [flushSave]);
 
   useEffect(() => {
     if (!note) return;
-
-    const firstSync =
-      lastSyncedRef.current.title === "" && lastSyncedRef.current.content === "";
+    const firstSync = lastSyncedRef.current.title === "" && lastSyncedRef.current.content === "";
     if (firstSync) {
       queueMicrotask(() => {
         setTitleInput(note.title);
@@ -183,12 +166,9 @@ export default function NoteEditorPage() {
       lastSyncedRef.current = { title: note.title, content: note.content };
       return;
     }
-
-    // Pull remote updates only when user has no unsaved local edits.
     if (!titleDirty && !contentDirty) {
       const remoteChanged =
-        note.title !== lastSyncedRef.current.title ||
-        note.content !== lastSyncedRef.current.content;
+        note.title !== lastSyncedRef.current.title || note.content !== lastSyncedRef.current.content;
       if (remoteChanged) {
         queueMicrotask(() => {
           setTitleInput(note.title);
@@ -201,15 +181,10 @@ export default function NoteEditorPage() {
 
   useEffect(() => {
     if (!note) return;
-
     const previousCanEdit = previousCanEditRef.current;
     previousCanEditRef.current = note.canEdit;
-
-    // Skip transition messaging on initial load.
     if (previousCanEdit === null) return;
-
     if (previousCanEdit && !note.canEdit) {
-      // Role changed to viewer while user was on this screen.
       queueMicrotask(() => {
         setTitleInput(note.title);
         setContentInput(note.content);
@@ -223,31 +198,13 @@ export default function NoteEditorPage() {
       });
       return;
     }
-
     if (!previousCanEdit && note.canEdit) {
-      // Role changed back to editor; unlock and clear stale read-only status.
       queueMicrotask(() => {
         setSaveStatus("idle");
         setFeedback("Your edit access has been restored.");
       });
     }
   }, [note]);
-
-  const statusLabel = !canEdit
-    ? "Read-only"
-    : !isOnline
-      ? "Offline"
-      : retryNeeded
-        ? `Retrying (${retryAttempt})`
-    : saveStatus === "typing"
-      ? "Typing..."
-      : saveStatus === "saving"
-        ? "Saving..."
-        : saveStatus === "saved"
-          ? "Saved"
-          : saveStatus === "error"
-            ? "Save error"
-            : "Idle";
 
   useEffect(() => {
     cursorPositionRef.current = cursorPosition;
@@ -258,310 +215,437 @@ export default function NoteEditorPage() {
   }, [isTyping]);
 
   useEffect(() => {
-    if (!canEdit) return;
-    if (!isOnline) {
-      if (!hasShownOfflineToastRef.current) {
-        hasShownOfflineToastRef.current = true;
-        showToast({
-          message: "You are offline. We will retry saves when connection returns.",
-          variant: "info",
-        });
-      }
-      return;
-    }
-    hasShownOfflineToastRef.current = false;
-  }, [canEdit, isOnline, showToast]);
-
-  useEffect(() => {
-    if (!retryNeeded || !canEdit || !note || (!titleDirty && !contentDirty)) {
-      return;
-    }
+    if (!retryNeeded || !canEditThisNote || !note || (!titleDirty && !contentDirty)) return;
     if (!isOnline) return;
-
-    const delay = Math.min(
-      RETRY_BASE_DELAY_MS * 2 ** Math.max(retryAttempt - 1, 0),
-      RETRY_MAX_DELAY_MS,
-    );
-
-    retryTimerRef.current = setTimeout(() => {
-      void flushSave();
-    }, delay);
-
+    const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** Math.max(retryAttempt - 1, 0), RETRY_MAX_DELAY_MS);
+    retryTimerRef.current = setTimeout(() => void flushSave(), delay);
     return () => {
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-      }
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
-  }, [canEdit, contentDirty, flushSave, isOnline, note, retryAttempt, retryNeeded, titleDirty]);
+  }, [canEditThisNote, contentDirty, flushSave, isOnline, note, retryAttempt, retryNeeded, titleDirty]);
 
   useEffect(() => {
     if (!note) return;
-    if (!titleDirty && !contentDirty) {
-      return;
-    }
-    saveTimerRef.current = setTimeout(() => {
-      void flushSave();
-    }, AUTOSAVE_DEBOUNCE_MS);
-
+    if (!titleDirty && !contentDirty) return;
+    saveTimerRef.current = setTimeout(() => void flushSave(), AUTOSAVE_DEBOUNCE_MS);
     return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [contentDirty, flushSave, note, titleDirty]);
 
   useEffect(() => {
     const onSaveShortcut = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") {
-        return;
-      }
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
-      if (canEdit) {
-        flushSaveNow();
-      }
+      if (canEditThisNote) flushSaveNow();
     };
     window.addEventListener("keydown", onSaveShortcut);
     return () => window.removeEventListener("keydown", onSaveShortcut);
-  }, [canEdit, flushSaveNow]);
+  }, [canEditThisNote, flushSaveNow]);
 
   useEffect(() => {
     if (!session || !note) return;
-
     const sendHeartbeat = () => {
       void heartbeat({
         noteId,
         cursorPosition: cursorPositionRef.current,
-        isTyping: canEdit ? isTypingRef.current : false,
+        isTyping: canEditThisNote ? isTypingRef.current : false,
       });
     };
-
     sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 10_000);
+    const interval = setInterval(sendHeartbeat, 10000);
     return () => {
       clearInterval(interval);
       void leavePresence({ noteId });
     };
-  }, [canEdit, heartbeat, leavePresence, note, noteId, session]);
+  }, [canEditThisNote, heartbeat, leavePresence, note, noteId, session]);
+
+  const onArchiveToggle = async () => {
+    if (!note) return;
+    try {
+      await archiveNote({ noteId, archived: !note.isArchived });
+      showToast({
+        message: note.isArchived ? "Note unarchived." : "Note archived.",
+        variant: "success",
+      });
+    } catch (error) {
+      showToast({
+        message: error instanceof Error ? error.message : "Failed to update archive.",
+        variant: "error",
+      });
+    }
+  };
+
+  const onDelete = async () => {
+    if (!note) return;
+    try {
+      await deleteNote({ noteId });
+      showToast({ message: "Note deleted.", variant: "success" });
+      window.location.href = "/dashboard";
+    } catch (error) {
+      showToast({
+        message: error instanceof Error ? error.message : "Failed to delete note.",
+        variant: "error",
+      });
+    }
+  };
+
+  const onCreateComment = async () => {
+    const content = commentDraft.trim();
+    if (!content) return;
+    setIsSubmittingComment(true);
+    try {
+      await createComment({ noteId, content });
+      setCommentDraft("");
+      showToast({ message: "Comment added.", variant: "success" });
+    } catch (error) {
+      showToast({
+        message: error instanceof Error ? error.message : "Failed to add comment.",
+        variant: "error",
+      });
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const onResolveComment = async (commentId: Id<"noteComments">, resolved: boolean) => {
+    try {
+      await resolveComment({ commentId, resolved: !resolved });
+    } catch (error) {
+      showToast({
+        message: error instanceof Error ? error.message : "Failed to update comment.",
+        variant: "error",
+      });
+    }
+  };
+
+  const onRestoreRevision = async (revisionId: Id<"noteRevisions">) => {
+    setIsRestoringRevisionId(revisionId);
+    try {
+      await restoreRevision({ noteId, revisionId });
+      showToast({ message: "Revision restored.", variant: "success" });
+    } catch (error) {
+      showToast({
+        message: error instanceof Error ? error.message : "Failed to restore revision.",
+        variant: "error",
+      });
+    } finally {
+      setIsRestoringRevisionId(null);
+    }
+  };
 
   const markTyping = useCallback(() => {
     setIsTyping(true);
-    if (typingTimerRef.current) {
-      clearTimeout(typingTimerRef.current);
-    }
-    typingTimerRef.current = setTimeout(() => {
-      setIsTyping(false);
-    }, 1_500);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => setIsTyping(false), 1500);
   }, []);
 
   useEffect(() => {
     return () => {
-      if (typingTimerRef.current) {
-        clearTimeout(typingTimerRef.current);
-      }
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-      }
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, []);
 
   const typingCollaborators =
     activeCollaborators?.filter(
-      (collaborator) =>
-        collaborator.isTyping && collaborator.userEmail !== (session?.user.email ?? null),
+      (collaborator) => collaborator.isTyping && collaborator.userEmail !== (session?.user.email ?? null),
     ) ?? [];
 
-  if (isPending) {
-    return (
-      <main className="app-container space-y-4">
-        <Skeleton className="h-10 w-60" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-96 w-full" />
-      </main>
-    );
-  }
-
-  if (!session) {
-    return (
-      <main className="app-container space-y-4">
-        <PageHeader description="Sign in to edit and collaborate on notes." title="Note Editor" />
-        <EmptyState
-          action={
-            <Link className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline" href="/">
-              Go to sign in
-              <Icons.forward className="h-4 w-4" />
-            </Link>
-          }
-          description="Your notes and collaborator presence will appear once authenticated."
-          icon={Icons.note}
-          title="Sign in required"
-        />
-      </main>
-    );
-  }
-
-  if (note === undefined) {
-    return (
-      <main className="app-container space-y-4">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-40 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-96 w-full" />
-      </main>
-    );
-  }
-
-  if (note === null) {
-    return (
-      <main className="app-container space-y-4">
-        <PageHeader description="Your permissions changed for this note." title="Note access removed" />
-        <EmptyState
-          action={
-            <Link
-              className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline"
-              href="/dashboard"
-            >
-              <Icons.back className="h-4 w-4" />
-              Back to Dashboard
-            </Link>
-          }
-          description="Return to your dashboard to continue in a workspace you can access."
-          icon={Icons.alert}
-          title="Access revoked"
-        />
-      </main>
-    );
-  }
+  const collaborators =
+    activeCollaborators?.map((collaborator) => ({
+      id: collaborator._id,
+      name: collaborator.displayName,
+      email: collaborator.userEmail ?? "email not available",
+      isTyping: collaborator.isTyping,
+      isCurrentUser: collaborator.userEmail === session?.user.email,
+    })) ?? [];
 
   return (
-    <main className="app-container space-y-5">
-      <PageHeader
-        actions={
-          <Link className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline" href="/dashboard">
-            <Icons.back className="h-4 w-4" />
-            Back to Dashboard
-          </Link>
-        }
-        description={`Active collaborators: ${activeCollaborators?.length ?? 0}`}
-        title={note.title || "Untitled Note"}
+    <div className="flex min-h-screen flex-col bg-background">
+      <NavHeader
+        isSignedIn={Boolean(session)}
+        sessionPending={isPending}
+        userEmail={session?.user.email}
+        onSignOut={async () => {
+          await authClient.signOut();
+        }}
       />
 
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-zinc-600">Status</span>
-        <Badge
-          className="normal-case"
-          variant={!isOnline ? "warning" : saveStatus === "error" ? "danger" : "default"}
-        >
-          {statusLabel}
-        </Badge>
-      </div>
-
-      {!isOnline ? (
-        <StateMessage variant="warning">
-          Connection lost. Editing continues locally and saves will retry automatically.
-        </StateMessage>
-      ) : null}
-
-      <Card className="rounded-xl shadow-sm">
-        <CardHeader className="mb-2">
-          <CardTitle className="text-sm text-zinc-700">Collaborators in this note</CardTitle>
-        </CardHeader>
-        {activeCollaborators === undefined ? (
-          <p className="text-sm text-zinc-500">Loading collaborators...</p>
-        ) : activeCollaborators.length === 0 ? (
-          <p className="text-sm text-zinc-500">Only you are here right now.</p>
-        ) : (
-          <ul className="flex flex-wrap gap-2">
-            {activeCollaborators.map((collaborator) => {
-              const isCurrentUser = collaborator.userEmail === session.user.email;
-              const avatarClass = getAvatarClass(collaborator.userEmail ?? collaborator.displayName);
-              return (
-                <li
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs ${avatarClass}`}
-                  key={collaborator._id}
-                >
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/70 text-[10px] font-semibold">
-                    {getInitials(collaborator.displayName)}
+      <main className="flex flex-1 flex-col">
+        <div className="sticky top-14 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
+                <Link href="/dashboard">
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Dashboard
+                </Link>
+              </Button>
+              <div className="flex items-center gap-4">
+                {note ? (
+                  <div className="flex items-center gap-2">
+                    {note.isArchived ? <Badge variant="warning">Archived</Badge> : null}
+                    {canEdit ? (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => void onArchiveToggle()}>
+                          {note.isArchived ? <Undo2 className="mr-1 h-4 w-4" /> : null}
+                          {note.isArchived ? "Unarchive" : "Archive"}
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => void onDelete()}>
+                          <Trash2 className="mr-1 h-4 w-4" />
+                          Delete
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <PresenceAvatars collaborators={collaborators} maxVisible={3} />
+                  <span className="hidden text-sm text-muted-foreground sm:inline">
+                    <Users className="mr-1 inline h-4 w-4" />
+                    {collaborators.length} online
                   </span>
-                  <span className="flex flex-col leading-tight">
-                    <span className="font-medium">
-                      {collaborator.displayName}
-                      {isCurrentUser ? " (You)" : ""}
-                      {collaborator.isTyping ? " • typing" : ""}
-                    </span>
-                    <span className="text-[10px] opacity-80">
-                      {collaborator.userEmail ?? "email not available"}
-                    </span>
+                </div>
+                <SaveStatus
+                  state={
+                    !isOnline
+                      ? "offline"
+                      : retryNeeded
+                        ? "retrying"
+                        : saveStatus === "saving"
+                          ? "saving"
+                          : saveStatus === "saved"
+                            ? "saved"
+                            : saveStatus === "error"
+                              ? "error"
+                              : saveStatus === "typing"
+                                ? "typing"
+                                : "idle"
+                  }
+                  lastSaved={effectiveLastSavedAt ? new Date(effectiveLastSavedAt) : null}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto w-full max-w-4xl space-y-4 px-4 pt-6 sm:px-6">
+          {!session && !isPending ? (
+            <StatusBanner variant="warning" message="Sign in to edit and collaborate on notes." />
+          ) : null}
+          {note === null ? (
+            <StatusBanner variant="error" message="You no longer have access to this note." />
+          ) : null}
+          {!isOnline ? (
+            <StatusBanner
+              variant="warning"
+              title="Connection lost"
+              message="Your changes will be saved when the connection is restored."
+            />
+          ) : null}
+          {!canEditThisNote && note ? (
+            <StatusBanner
+              variant="info"
+              message={
+                note.isArchived
+                  ? "This note is archived. Unarchive to continue editing."
+                  : "You're viewing this note in read-only mode. Contact owner to request edit access."
+              }
+            />
+          ) : null}
+          {saveStatus === "error" ? (
+            <StatusBanner variant="error" title="Unable to save" message={feedback || "Save failed"} />
+          ) : null}
+        </div>
+
+        <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6">
+          {isPending || note === undefined ? (
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">Loading note...</div>
+          ) : note ? (
+            <>
+            <div className="rounded-xl border border-border bg-card shadow-sm">
+              {typingCollaborators.length > 0 ? (
+                <div className="flex items-center gap-2 border-b border-border px-6 py-3 text-sm text-muted-foreground">
+                  <span className="flex h-2 w-2 animate-pulse rounded-full bg-primary" />
+                  {typingCollaborators.map((c) => c.displayName).join(", ")}{" "}
+                  {typingCollaborators.length === 1 ? "is" : "are"} typing...
+                </div>
+              ) : null}
+              <div className="border-b border-border px-6 py-4">
+                <Input
+                  value={title}
+                  onChange={(event) => {
+                    if (!canEditThisNote) return;
+                    setTitleInput(event.target.value);
+                    setTitleDirty(true);
+                    setSaveStatus("typing");
+                    markTyping();
+                  }}
+                  onBlur={() => {
+                    if (canEditThisNote) flushSaveNow();
+                  }}
+                  placeholder="Untitled note"
+                  disabled={!canEditThisNote}
+                  className={cn(
+                    "border-0 bg-transparent p-0 text-2xl font-semibold placeholder:text-muted-foreground/50 focus-visible:ring-0",
+                    !canEditThisNote ? "cursor-not-allowed opacity-70" : undefined,
+                  )}
+                />
+                <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Last edited{" "}
+                    {effectiveLastSavedAt ? new Date(effectiveLastSavedAt).toLocaleTimeString() : "Not saved yet"}
                   </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {typingCollaborators.length > 0 ? (
-          <p className="mt-2 text-xs text-zinc-500">
-            {typingCollaborators.map((collaborator) => collaborator.displayName).join(", ")}{" "}
-            {typingCollaborators.length > 1 ? "are" : "is"} typing...
-          </p>
-        ) : null}
-      </Card>
+                  {!canEditThisNote ? (
+                    <span className="flex items-center gap-1 text-warning">
+                      <Lock className="h-3 w-3" />
+                      Read only
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="px-6 py-4">
+                <Textarea
+                  value={content}
+                  onChange={(event) => {
+                    if (!canEditThisNote) return;
+                    setContentInput(event.target.value);
+                    setContentDirty(true);
+                    setSaveStatus("typing");
+                    setCursorPosition(event.target.selectionStart);
+                    markTyping();
+                  }}
+                  onBlur={() => {
+                    if (canEditThisNote) flushSaveNow();
+                  }}
+                  onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+                  onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+                  onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
+                  placeholder="Start writing..."
+                  disabled={!canEditThisNote}
+                  className={cn(
+                    "min-h-[50vh] resize-none border-0 bg-transparent p-0 font-mono text-base leading-relaxed placeholder:text-muted-foreground/50 focus-visible:ring-0",
+                    !canEditThisNote ? "cursor-not-allowed opacity-70" : undefined,
+                  )}
+                />
+              </div>
+              <div className="flex items-center justify-between border-t border-border px-6 py-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-4">
+                  <span>{content.split(/\s+/).filter(Boolean).length} words</span>
+                  <span>{content.length} characters</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {saveStatus === "error" ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={flushSaveNow}
+                      className="h-7 text-xs text-destructive hover:text-destructive"
+                    >
+                      <RefreshCw className="mr-1 h-3 w-3" />
+                      Retry save
+                    </Button>
+                  ) : null}
+                  {saveStatus === "saved" && !hasUnsavedChanges ? (
+                    <span className="text-success">All changes saved</span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 space-y-6">
+              <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-card-foreground">Comments</h3>
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="mb-3 flex gap-2">
+                  <Input
+                    placeholder="Add a comment. Mention teammates with @email.com"
+                    value={commentDraft}
+                    onChange={(event) => setCommentDraft(event.target.value)}
+                    disabled={!session || isSubmittingComment}
+                  />
+                  <Button
+                    onClick={() => void onCreateComment()}
+                    disabled={!session || isSubmittingComment || !commentDraft.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
+                {comments && comments.length > 0 ? (
+                  <div className="space-y-2">
+                    {comments.map((comment) => (
+                      <div key={comment._id} className="rounded-md border border-border p-3">
+                        <div className="mb-1 flex items-center justify-between">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {comment.authorDisplayName} •{" "}
+                            {new Date(comment.createdAt).toLocaleString()}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void onResolveComment(comment._id, comment.status === "resolved")}
+                          >
+                            {comment.status === "resolved" ? "Reopen" : "Resolve"}
+                          </Button>
+                        </div>
+                        <p className="text-sm text-card-foreground">{comment.content}</p>
+                        {comment.mentionEmails.length > 0 ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Mentions: {comment.mentionEmails.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No comments yet.</p>
+                )}
+              </div>
 
-      <Card className="rounded-xl shadow-sm">
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="note-title">Title</Label>
-            <Input
-              className="mt-2 text-lg font-semibold"
-              disabled={!canEdit}
-              id="note-title"
-              onBlur={() => {
-                if (canEdit) flushSaveNow();
-              }}
-              onChange={(event) => {
-                if (!canEdit) return;
-                setTitleInput(event.target.value);
-                setTitleDirty(true);
-                setSaveStatus("typing");
-                markTyping();
-              }}
-              placeholder="Untitled note"
-              value={title}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="note-content">Content</Label>
-            <Textarea
-              className="mt-2 min-h-[420px] leading-6"
-              disabled={!canEdit}
-              id="note-content"
-              onBlur={() => {
-                if (canEdit) flushSaveNow();
-              }}
-              onChange={(event) => {
-                if (!canEdit) return;
-                setContentInput(event.target.value);
-                setContentDirty(true);
-                setSaveStatus("typing");
-                setCursorPosition(event.target.selectionStart);
-                markTyping();
-              }}
-              onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-              onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-              onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-              placeholder="Start writing your note..."
-              value={content}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {feedback ? (
-        <StateMessage variant={saveStatus === "error" ? "error" : "muted"}>{feedback}</StateMessage>
-      ) : null}
-      <p className="text-xs text-zinc-500">
-        Last saved: {formattedLastSavedAt} {hasUnsavedChanges ? "• Unsaved changes" : ""}
-      </p>
-    </main>
+              <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                <h3 className="mb-3 text-sm font-semibold text-card-foreground">Version history</h3>
+                {revisions.length > 0 ? (
+                  <div className="space-y-2">
+                    {revisions.map((revision) => (
+                      <div key={revision._id} className="flex items-center justify-between rounded-md border border-border p-3">
+                        <div>
+                          <p className="text-sm font-medium text-card-foreground">
+                            {new Date(revision.createdAt).toLocaleString()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {revision.reason ?? "autosave snapshot"}
+                          </p>
+                        </div>
+                        {canEdit ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isRestoringRevisionId === revision._id}
+                            onClick={() => void onRestoreRevision(revision._id)}
+                          >
+                            Restore
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                    {revisionsStatus === "CanLoadMore" ? (
+                      <Button variant="ghost" size="sm" onClick={() => loadMoreRevisions(8)}>
+                        Load more revisions
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No revisions yet.</p>
+                )}
+              </div>
+            </div>
+            </>
+          ) : null}
+        </div>
+      </main>
+    </div>
   );
 }

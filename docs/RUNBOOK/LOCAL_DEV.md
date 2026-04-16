@@ -30,6 +30,16 @@ npx convex env set BETTER_AUTH_SECRET "<strong-random-secret>"
 npx convex env set SITE_URL "http://localhost:3000"
 ```
 
+## Optional Convex env (recommended for admin tooling)
+
+To allow `clearAppData` admin reset in `convex/admin.ts`, configure admin emails:
+
+```bash
+npx convex env set ADMIN_EMAILS "admin1@example.com,admin2@example.com"
+```
+
+If `ADMIN_EMAILS` is not configured, destructive reset is intentionally blocked.
+
 Verify:
 
 ```bash
