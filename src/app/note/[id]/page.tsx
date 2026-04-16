@@ -24,6 +24,13 @@ const AUTOSAVE_DEBOUNCE_MS = 220;
 const RETRY_BASE_DELAY_MS = 1000;
 const RETRY_MAX_DELAY_MS = 15000;
 
+function buildTypingLabel(displayNames: string[]): string {
+  if (displayNames.length === 0) return "";
+  if (displayNames.length === 1) return `${displayNames[0]} is typing...`;
+  if (displayNames.length === 2) return `${displayNames[0]} and ${displayNames[1]} are typing...`;
+  return `${displayNames[0]} and ${displayNames.length - 1} others are typing...`;
+}
+
 export default function NoteEditorPage() {
   const { data: session, isPending } = authClient.useSession();
   const { showToast } = useToast();
@@ -77,6 +84,7 @@ export default function NoteEditorPage() {
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorPositionRef = useRef<number | undefined>(undefined);
   const isTypingRef = useRef(false);
+  const typingHeartbeatStateRef = useRef<boolean | null>(null);
 
   const title = titleInput;
   const content = contentInput;
@@ -214,6 +222,31 @@ export default function NoteEditorPage() {
     isTypingRef.current = isTyping;
   }, [isTyping]);
 
+  const sendTypingHeartbeat = useCallback(
+    (typing: boolean) => {
+      if (!session || !note) return;
+      void heartbeat({
+        noteId,
+        cursorPosition: cursorPositionRef.current,
+        isTyping: canEditThisNote ? typing : false,
+      });
+    },
+    [canEditThisNote, heartbeat, note, noteId, session],
+  );
+
+  useEffect(() => {
+    if (!session || !note) {
+      typingHeartbeatStateRef.current = null;
+      return;
+    }
+
+    const nextTyping = canEditThisNote ? isTyping : false;
+    if (typingHeartbeatStateRef.current === nextTyping) return;
+
+    typingHeartbeatStateRef.current = nextTyping;
+    sendTypingHeartbeat(nextTyping);
+  }, [canEditThisNote, isTyping, note, sendTypingHeartbeat, session]);
+
   useEffect(() => {
     if (!retryNeeded || !canEditThisNote || !note || (!titleDirty && !contentDirty)) return;
     if (!isOnline) return;
@@ -337,7 +370,7 @@ export default function NoteEditorPage() {
   const markTyping = useCallback(() => {
     setIsTyping(true);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => setIsTyping(false), 1500);
+    typingTimerRef.current = setTimeout(() => setIsTyping(false), 700);
   }, []);
 
   useEffect(() => {
@@ -349,8 +382,9 @@ export default function NoteEditorPage() {
 
   const typingCollaborators =
     activeCollaborators?.filter(
-      (collaborator) => collaborator.isTyping && collaborator.userEmail !== (session?.user.email ?? null),
+      (collaborator) => collaborator.isTyping && !collaborator.isCurrentUser,
     ) ?? [];
+  const typingLabel = buildTypingLabel(typingCollaborators.map((collaborator) => collaborator.displayName));
 
   const collaborators =
     activeCollaborators?.map((collaborator) => ({
@@ -358,7 +392,7 @@ export default function NoteEditorPage() {
       name: collaborator.displayName,
       email: collaborator.userEmail ?? "email not available",
       isTyping: collaborator.isTyping,
-      isCurrentUser: collaborator.userEmail === session?.user.email,
+      isCurrentUser: collaborator.isCurrentUser,
     })) ?? [];
 
   return (
@@ -373,7 +407,7 @@ export default function NoteEditorPage() {
       />
 
       <main className="flex flex-1 flex-col">
-        <div className="sticky top-14 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="supports-backdrop-filter:bg-background/80 sticky top-14 z-40 border-b border-border bg-background/95 backdrop-blur">
           <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
@@ -465,13 +499,17 @@ export default function NoteEditorPage() {
           ) : note ? (
             <>
             <div className="rounded-xl border border-border bg-card shadow-sm">
-              {typingCollaborators.length > 0 ? (
-                <div className="flex items-center gap-2 border-b border-border px-6 py-3 text-sm text-muted-foreground">
+              <div className="border-b border-border px-6 py-3 text-sm text-muted-foreground">
+                <div
+                  className={cn(
+                    "flex min-h-5 items-center gap-2 transition-opacity",
+                    typingLabel ? "opacity-100" : "opacity-0",
+                  )}
+                >
                   <span className="flex h-2 w-2 animate-pulse rounded-full bg-primary" />
-                  {typingCollaborators.map((c) => c.displayName).join(", ")}{" "}
-                  {typingCollaborators.length === 1 ? "is" : "are"} typing...
+                  <span>{typingLabel || "\u00A0"}</span>
                 </div>
-              ) : null}
+              </div>
               <div className="border-b border-border px-6 py-4">
                 <Input
                   value={title}
@@ -483,7 +521,10 @@ export default function NoteEditorPage() {
                     markTyping();
                   }}
                   onBlur={() => {
-                    if (canEditThisNote) flushSaveNow();
+                    if (canEditThisNote) {
+                      setIsTyping(false);
+                      flushSaveNow();
+                    }
                   }}
                   placeholder="Untitled note"
                   disabled={!canEditThisNote}
@@ -518,7 +559,10 @@ export default function NoteEditorPage() {
                     markTyping();
                   }}
                   onBlur={() => {
-                    if (canEditThisNote) flushSaveNow();
+                    if (canEditThisNote) {
+                      setIsTyping(false);
+                      flushSaveNow();
+                    }
                   }}
                   onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
                   onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}

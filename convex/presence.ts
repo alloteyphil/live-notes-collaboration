@@ -4,7 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
 const STALE_AFTER_MS = 45_000;
-const TYPING_STALE_AFTER_MS = 4_000;
+const TYPING_STALE_AFTER_MS = 12_000;
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
   const identity = await ctx.auth.getUserIdentity();
@@ -123,6 +123,7 @@ export const listByNote = query({
       .filter((item) => now - item.lastSeenAt <= STALE_AFTER_MS)
       .map((item) => ({
         _id: item._id,
+        isCurrentUser: item.tokenIdentifier === identity.tokenIdentifier,
         displayName: item.displayName,
         userEmail: item.userEmail ?? null,
         cursorPosition: item.cursorPosition ?? null,

@@ -23,6 +23,30 @@ interface PresenceAvatarsProps {
   className?: string;
 }
 
+function getTypingLabel(collaborators: Collaborator[]): string {
+  const typingCollaborators = collaborators.filter(
+    (collaborator) => collaborator.isTyping && !collaborator.isCurrentUser,
+  );
+
+  if (typingCollaborators.length === 0) return "";
+
+  const displayName = (name: string) => name.trim().split(" ")[0] || name;
+
+  if (typingCollaborators.length === 1) {
+    return `${displayName(typingCollaborators[0].name)} is typing...`;
+  }
+
+  if (typingCollaborators.length === 2) {
+    return `${displayName(typingCollaborators[0].name)} and ${displayName(
+      typingCollaborators[1].name,
+    )} are typing...`;
+  }
+
+  return `${displayName(typingCollaborators[0].name)} and ${
+    typingCollaborators.length - 1
+  } others are typing...`;
+}
+
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -48,6 +72,7 @@ export function PresenceAvatars({
 }: PresenceAvatarsProps) {
   const visible = collaborators.slice(0, maxVisible);
   const overflow = collaborators.length - maxVisible;
+  const typingLabel = getTypingLabel(collaborators);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -104,9 +129,14 @@ export function PresenceAvatars({
             </Tooltip>
           ) : null}
         </div>
-        {collaborators.some((c) => c.isTyping) ? (
-          <span className="ml-3 animate-pulse text-xs text-muted-foreground">Someone is typing...</span>
-        ) : null}
+        <span
+          className={cn(
+            "ml-3 inline-flex min-h-4 items-center text-xs text-muted-foreground",
+            typingLabel ? "animate-pulse" : undefined,
+          )}
+        >
+          {typingLabel || "\u00A0"}
+        </span>
       </div>
     </TooltipProvider>
   );
