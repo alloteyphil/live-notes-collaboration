@@ -4,7 +4,7 @@ A portfolio-focused realtime notes app built with:
 
 - Next.js (App Router) + TypeScript
 - Convex (backend + realtime)
-- Better Auth integrated with Convex
+- Clerk (hosted authentication) wired to Convex via `ConvexProviderWithClerk`
 - Tailwind CSS v4
 
 ## Project Structure
@@ -15,6 +15,9 @@ A portfolio-focused realtime notes app built with:
 
 ## Latest Feature Additions
 
+- Migrated authentication from Better Auth to Clerk (fresh-start, no user
+  migration). Sign-up and sign-in now use Clerk-hosted routes at `/sign-up`
+  and `/sign-in` to fix intermittent signup failures.
 - Note lifecycle: archive, unarchive, and delete notes.
 - Comment threads with resolve/reopen state.
 - `@email` mention parsing in comments with backend notifications.
@@ -46,23 +49,49 @@ A portfolio-focused realtime notes app built with:
 npm install
 ```
 
-2. Set required Convex env:
+2. Configure Clerk:
+
+   - Create a Clerk application at
+     [dashboard.clerk.com](https://dashboard.clerk.com/apps/new).
+   - Activate the Convex integration at
+     `https://dashboard.clerk.com/apps/setup/convex` (this creates a JWT
+     template named `convex` and returns a Frontend API URL).
+   - Copy the publishable key, secret key, and Frontend API URL.
+
+3. Set Next.js env in `.env.local` (dev) or your host (production):
 
 ```bash
-npx convex env set BETTER_AUTH_SECRET "<strong-random-secret>"
-npx convex env set SITE_URL "http://localhost:3000"
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+NEXT_PUBLIC_CONVEX_URL=https://<your-convex-deployment>.convex.cloud
 ```
 
-3. Run Convex:
+4. Set Convex env so it validates Clerk JWTs:
+
+```bash
+npx convex env set CLERK_JWT_ISSUER_DOMAIN "https://<your-clerk-frontend-api>"
+```
+
+5. Run Convex:
 
 ```bash
 npx convex dev
 ```
 
-4. Run Next.js in another terminal:
+6. Run Next.js in another terminal:
 
 ```bash
 npm run dev
 ```
 
-5. Open `http://localhost:3000`.
+7. Open `http://localhost:3000` and click "Create account" or "Sign in".
+
+## Production Notes
+
+- Create a separate Clerk production instance; its publishable key, secret
+  key, and Frontend API URL differ from development.
+- Set the production `CLERK_JWT_ISSUER_DOMAIN` on the production Convex
+  deployment (`npx convex env set --prod ...`) and the production Clerk keys
+  on the host.
+- Existing Better Auth users are intentionally not migrated; users will need
+  to sign up again in Clerk.

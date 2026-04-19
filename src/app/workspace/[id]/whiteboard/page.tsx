@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { api } from "../../../../../convex/_generated/api";
 import { ExcalidrawWrapper } from "@/components/excalidraw-wrapper";
@@ -11,7 +11,7 @@ import { NavHeader } from "@/components/nav-header";
 import { PageHeader } from "@/components/page-header";
 import { SaveStatus } from "@/components/save-status";
 import { StatusBanner } from "@/components/status-banner";
-import { authClient } from "@/lib/auth-client";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { useToast } from "@/components/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,13 +19,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export default function WorkspaceWhiteboardPage() {
-  const { data: session, isPending } = authClient.useSession();
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
+  const { isLoading: isConvexAuthLoading, isAuthenticated: isConvexAuthenticated } = useConvexAuth();
+  const isPending = !isLoaded;
+  const session = isSignedIn
+    ? { user: { email: user?.primaryEmailAddress?.emailAddress ?? "" } }
+    : null;
+  const canRunProtectedQueries = Boolean(session) && isConvexAuthenticated;
+  const sessionPending = isPending || (Boolean(session) && isConvexAuthLoading);
   const { showToast } = useToast();
   const params = useParams<{ id: string }>();
   const workspaceId = params.id as Id<"workspaces">;
 
-  const workspace = useQuery(api.workspaces.getById, session ? { workspaceId } : "skip");
-  const whiteboardState = useQuery(api.whiteboards.get, session ? { workspaceId } : "skip");
+  const workspace = useQuery(api.workspaces.getById, canRunProtectedQueries ? { workspaceId } : "skip");
+  const whiteboardState = useQuery(
+    api.whiteboards.get,
+    canRunProtectedQueries ? { workspaceId } : "skip",
+  );
   const saveWhiteboard = useMutation(api.whiteboards.save);
 
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -91,10 +102,10 @@ export default function WorkspaceWhiteboardPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <NavHeader
         isSignedIn={Boolean(session)}
-        sessionPending={isPending}
+        sessionPending={sessionPending}
         userEmail={session?.user.email}
         onSignOut={async () => {
-          await authClient.signOut();
+          await signOut({ redirectUrl: "/" });
         }}
       />
 
@@ -123,7 +134,7 @@ export default function WorkspaceWhiteboardPage() {
             />
           </div>
 
-          {!session && !isPending ? (
+          {!session && !sessionPending ? (
             <StatusBanner
               variant="warning"
               message="Sign in to access workspace whiteboards."

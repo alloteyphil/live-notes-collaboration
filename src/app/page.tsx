@@ -1,95 +1,40 @@
 "use client";
 
-import { authClient } from "@/lib/auth-client";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { NavHeader } from "@/components/nav-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
 import {
   ArrowRight,
   Check,
   FileText,
   List,
+  LogIn,
   Paintbrush,
   Save,
   Shield,
+  UserPlus,
   Users,
 } from "lucide-react";
-import { Label } from "@/components/ui/label";
 import { StatusBanner } from "@/components/status-banner";
 
 export default function HomePage() {
-  const { data: session, isPending } = authClient.useSession();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<string>("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
+  const isPending = !isLoaded;
+  const userEmail = user?.primaryEmailAddress?.emailAddress;
 
-  const signUp = async () => {
-    setIsSubmitting(true);
-    setMessage("");
-    try {
-      const result = await authClient.signUp.email({
-        name: name || "Live Notes User",
-        email,
-        password,
-      });
-      if (result.error) {
-        setMessage(result.error.message ?? "Sign up failed");
-        return;
-      }
-      setMessage("Account created. You are signed in.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const signIn = async () => {
-    setIsSubmitting(true);
-    setMessage("");
-    try {
-      const result = await authClient.signIn.email({
-        email,
-        password,
-      });
-      if (result.error) {
-        setMessage(result.error.message ?? "Sign in failed");
-        return;
-      }
-      setMessage("Signed in.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!email || !password || (mode === "signup" && !name)) {
-      setMessage("Please fill in all required fields.");
-      return;
-    }
-    if (mode === "signup") {
-      await signUp();
-      return;
-    }
-    await signIn();
-  };
-
-  const signOut = async () => {
-    await authClient.signOut();
-    setMessage("Signed out.");
+  const onSignOut = async () => {
+    await signOut({ redirectUrl: "/" });
   };
 
   return (
     <div className="min-h-screen bg-background">
       <NavHeader
-        isSignedIn={Boolean(session)}
+        isSignedIn={Boolean(isSignedIn)}
         sessionPending={isPending}
-        userEmail={session?.user.email}
-        onSignOut={signOut}
+        userEmail={userEmail}
+        onSignOut={onSignOut}
       />
       <main>
         <section className="relative overflow-hidden border-b border-border/50">
@@ -116,7 +61,7 @@ export default function HomePage() {
                   <FeatureItem icon={Paintbrush} text="Collaborative whiteboard" />
                   <FeatureItem icon={Shield} text="Invite-based access control" />
                 </div>
-                {session ? (
+                {isSignedIn ? (
                   <div className="flex items-center gap-3">
                     <Button size="lg" asChild>
                       <Link href="/dashboard">
@@ -124,7 +69,7 @@ export default function HomePage() {
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
                     </Button>
-                    <Button variant="outline" size="lg" onClick={signOut}>
+                    <Button variant="outline" size="lg" onClick={onSignOut}>
                       Sign out
                     </Button>
                   </div>
@@ -145,7 +90,7 @@ export default function HomePage() {
                       </div>
                     </div>
                   </div>
-                ) : session ? (
+                ) : isSignedIn ? (
                   <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
                     <div className="flex flex-col items-center space-y-6 text-center">
                       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
@@ -157,7 +102,7 @@ export default function HomePage() {
                         </h3>
                         <p className="text-sm text-muted-foreground">
                           Signed in as{" "}
-                          <span className="font-medium text-foreground">{session.user.email}</span>
+                          <span className="font-medium text-foreground">{userEmail}</span>
                         </p>
                       </div>
                       <div className="flex w-full flex-col gap-3">
@@ -167,7 +112,7 @@ export default function HomePage() {
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </Link>
                         </Button>
-                        <Button variant="outline" size="lg" className="w-full" onClick={signOut}>
+                        <Button variant="outline" size="lg" className="w-full" onClick={onSignOut}>
                           Sign out
                         </Button>
                       </div>
@@ -178,68 +123,29 @@ export default function HomePage() {
                     <div className="space-y-6">
                       <div className="space-y-2 text-center">
                         <h2 className="text-2xl font-semibold tracking-tight text-card-foreground">
-                          {mode === "signin" ? "Welcome back" : "Create your account"}
+                          Get started
                         </h2>
                         <p className="text-sm text-muted-foreground">
-                          {mode === "signin"
-                            ? "Sign in to access your workspaces"
-                            : "Get started with Live Notes today"}
+                          Create an account or sign in to open your workspaces.
                         </p>
                       </div>
-                      <form onSubmit={onSubmit} className="space-y-4">
-                        {mode === "signup" ? (
-                          <div className="space-y-2">
-                            <Label htmlFor="name">Full name</Label>
-                            <Input
-                              id="name"
-                              value={name}
-                              onChange={(event) => setName(event.target.value)}
-                              placeholder="Jane Doe"
-                              disabled={isSubmitting}
-                            />
-                          </div>
-                        ) : null}
-                        <div className="space-y-2">
-                          <Label htmlFor="email">Email address</Label>
-                          <Input
-                            id="email"
-                            type="email"
-                            value={email}
-                            onChange={(event) => setEmail(event.target.value)}
-                            placeholder="you@example.com"
-                            disabled={isSubmitting}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="password">Password</Label>
-                          <Input
-                            id="password"
-                            type="password"
-                            value={password}
-                            onChange={(event) => setPassword(event.target.value)}
-                            placeholder="Enter your password"
-                            disabled={isSubmitting}
-                          />
-                        </div>
-                        <Button className="w-full" size="lg" disabled={isSubmitting} type="submit">
-                          {mode === "signin" ? "Sign in" : "Create account"}
-                          <ArrowRight className="ml-2 h-4 w-4" />
+                      <div className="flex flex-col gap-3">
+                        <Button size="lg" className="w-full" asChild>
+                          <Link href="/sign-up">
+                            <UserPlus className="mr-2 h-4 w-4" />
+                            Create account
+                          </Link>
                         </Button>
-                      </form>
-                      <div className="text-center">
-                        <p className="text-sm text-muted-foreground">
-                          {mode === "signin"
-                            ? "Don't have an account?"
-                            : "Already have an account?"}
-                          <button
-                            type="button"
-                            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                            className="ml-1 font-medium text-primary hover:underline"
-                          >
-                            {mode === "signin" ? "Sign up" : "Sign in"}
-                          </button>
-                        </p>
+                        <Button size="lg" variant="outline" className="w-full" asChild>
+                          <Link href="/sign-in">
+                            <LogIn className="mr-2 h-4 w-4" />
+                            Sign in
+                          </Link>
+                        </Button>
                       </div>
+                      <p className="text-center text-xs text-muted-foreground">
+                        Authentication is handled securely by Clerk.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -293,20 +199,6 @@ export default function HomePage() {
             {isPending ? (
               <div className="mt-8">
                 <StatusBanner variant="muted" message="Loading session..." />
-              </div>
-            ) : null}
-            {message ? (
-              <div className="mt-8">
-                <StatusBanner
-                  variant={
-                    message.toLowerCase().includes("failed")
-                      ? "error"
-                      : message.toLowerCase().includes("signed out")
-                        ? "muted"
-                        : "success"
-                  }
-                  message={message}
-                />
               </div>
             ) : null}
           </div>

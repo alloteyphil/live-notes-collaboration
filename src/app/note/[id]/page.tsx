@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
 import { NavHeader } from "@/components/nav-header";
 import { PresenceAvatars } from "@/components/presence-avatars";
 import { SaveStatus } from "@/components/save-status";
 import { StatusBanner } from "@/components/status-banner";
-import { authClient } from "@/lib/auth-client";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { useToast } from "@/components/toast-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,13 +32,26 @@ function buildTypingLabel(displayNames: string[]): string {
 }
 
 export default function NoteEditorPage() {
-  const { data: session, isPending } = authClient.useSession();
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
+  const { isLoading: isConvexAuthLoading, isAuthenticated: isConvexAuthenticated } = useConvexAuth();
+  const isPending = !isLoaded;
+  const userEmail = user?.primaryEmailAddress?.emailAddress ?? "";
+  const session = useMemo(
+    () => (isSignedIn ? { user: { email: userEmail } } : null),
+    [isSignedIn, userEmail],
+  );
+  const canRunProtectedQueries = Boolean(session) && isConvexAuthenticated;
+  const sessionPending = isPending || (Boolean(session) && isConvexAuthLoading);
   const { showToast } = useToast();
   const params = useParams<{ id: string }>();
   const noteId = params.id as Id<"notes">;
 
-  const note = useQuery(api.notes.getById, session ? { noteId } : "skip");
-  const activeCollaborators = useQuery(api.presence.listByNote, session ? { noteId } : "skip");
+  const note = useQuery(api.notes.getById, canRunProtectedQueries ? { noteId } : "skip");
+  const activeCollaborators = useQuery(
+    api.presence.listByNote,
+    canRunProtectedQueries ? { noteId } : "skip",
+  );
   const updateTitle = useMutation(api.notes.updateTitle);
   const updateContent = useMutation(api.notes.updateContent);
   const archiveNote = useMutation(api.notes.archive);
@@ -48,14 +61,14 @@ export default function NoteEditorPage() {
   const restoreRevision = useMutation(api.notes.restoreRevision);
   const heartbeat = useMutation(api.presence.heartbeat);
   const leavePresence = useMutation(api.presence.leave);
-  const comments = useQuery(api.comments.listByNote, session ? { noteId } : "skip");
+  const comments = useQuery(api.comments.listByNote, canRunProtectedQueries ? { noteId } : "skip");
   const {
     results: revisions,
     status: revisionsStatus,
     loadMore: loadMoreRevisions,
   } = usePaginatedQuery(
     api.notes.listRevisions,
-    session ? { noteId } : "skip",
+    canRunProtectedQueries ? { noteId } : "skip",
     { initialNumItems: 8 },
   );
 
@@ -399,10 +412,10 @@ export default function NoteEditorPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <NavHeader
         isSignedIn={Boolean(session)}
-        sessionPending={isPending}
+        sessionPending={sessionPending}
         userEmail={session?.user.email}
         onSignOut={async () => {
-          await authClient.signOut();
+          await signOut({ redirectUrl: "/" });
         }}
       />
 
@@ -465,7 +478,7 @@ export default function NoteEditorPage() {
         </div>
 
         <div className="mx-auto w-full max-w-4xl space-y-4 px-4 pt-6 sm:px-6">
-          {!session && !isPending ? (
+          {!session && !sessionPending ? (
             <StatusBanner variant="warning" message="Sign in to edit and collaborate on notes." />
           ) : null}
           {note === null ? (

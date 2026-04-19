@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
-import { authClient } from "@/lib/auth-client";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { ContentCard } from "@/components/content-card";
 import { EmptyState } from "@/components/empty-state";
 import { NavHeader } from "@/components/nav-header";
@@ -49,7 +49,15 @@ const getInviteErrorMessage = (error: unknown) => {
 };
 
 export default function WorkspaceDetailPage() {
-  const { data: session, isPending } = authClient.useSession();
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
+  const { isLoading: isConvexAuthLoading, isAuthenticated: isConvexAuthenticated } = useConvexAuth();
+  const isPending = !isLoaded;
+  const session = isSignedIn
+    ? { user: { email: user?.primaryEmailAddress?.emailAddress ?? "" } }
+    : null;
+  const canRunProtectedQueries = Boolean(session) && isConvexAuthenticated;
+  const sessionPending = isPending || (Boolean(session) && isConvexAuthLoading);
   const { showToast } = useToast();
   const params = useParams<{ id: string }>();
   const workspaceId = params.id as Id<"workspaces">;
@@ -57,17 +65,20 @@ export default function WorkspaceDetailPage() {
   const [noteSearch, setNoteSearch] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
 
-  const workspace = useQuery(api.workspaces.getById, session ? { workspaceId } : "skip");
+  const workspace = useQuery(api.workspaces.getById, canRunProtectedQueries ? { workspaceId } : "skip");
   const {
     results: notes,
     status: notesPaginationStatus,
     loadMore: loadMoreNotes,
   } = usePaginatedQuery(
     api.notes.listByWorkspacePaginated,
-    session ? { workspaceId, includeArchived } : "skip",
+    canRunProtectedQueries ? { workspaceId, includeArchived } : "skip",
     { initialNumItems: 20 },
   );
-  const memberState = useQuery(api.workspaces.listMembers, session ? { workspaceId } : "skip");
+  const memberState = useQuery(
+    api.workspaces.listMembers,
+    canRunProtectedQueries ? { workspaceId } : "skip",
+  );
   const createNote = useMutation(api.notes.create);
   const createFromTemplate = useMutation(api.notes.createFromTemplate);
   const archiveNote = useMutation(api.notes.archive);
@@ -89,11 +100,14 @@ export default function WorkspaceDetailPage() {
   const [updatingInviteId, setUpdatingInviteId] = useState<Id<"workspaceInvites"> | null>(null);
   const searchNotes = useQuery(
     api.notes.searchNotes,
-    session && noteSearch.trim()
+    canRunProtectedQueries && noteSearch.trim()
       ? { workspaceId, searchTerm: noteSearch.trim(), limit: 10 }
       : "skip",
   );
-  const templates = useQuery(api.notes.listTemplates, session ? { workspaceId } : "skip");
+  const templates = useQuery(
+    api.notes.listTemplates,
+    canRunProtectedQueries ? { workspaceId } : "skip",
+  );
 
   const onCreateNote = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -249,10 +263,10 @@ export default function WorkspaceDetailPage() {
     <div className="min-h-screen bg-background">
       <NavHeader
         isSignedIn={Boolean(session)}
-        sessionPending={isPending}
+        sessionPending={sessionPending}
         userEmail={session?.user.email}
         onSignOut={async () => {
-          await authClient.signOut();
+          await signOut({ redirectUrl: "/" });
         }}
       />
 
@@ -275,14 +289,14 @@ export default function WorkspaceDetailPage() {
             </div>
           ) : null}
 
-          {!session && !isPending ? (
+          {!session && !sessionPending ? (
             <ContentCard>
               <EmptyState
                 title="Sign in required"
                 description="Authentication is required before workspace data is available."
                 action={
                   <Button asChild>
-                    <Link href="/">Go to sign in</Link>
+                    <Link href="/sign-in">Go to sign in</Link>
                   </Button>
                 }
               />

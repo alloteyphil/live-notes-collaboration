@@ -12,11 +12,11 @@
 - Decision: Use Convex for schema, queries, mutations, and realtime subscriptions.
 - Why: Reduces infrastructure complexity and accelerates collaborative features.
 
-## ADR-003: Better Auth integrated with Convex
+## ADR-003: Clerk for authentication
 
-- Status: accepted
-- Decision: Use Better Auth with `@convex-dev/better-auth` component and JWT provider config.
-- Why: Keeps auth and data authorization tightly integrated while preserving TypeScript ergonomics.
+- Status: accepted (supersedes earlier Better Auth decision)
+- Decision: Use Clerk (`@clerk/nextjs`) for hosted sign-in/sign-up, with Convex configured to validate Clerk JWTs via `CLERK_JWT_ISSUER_DOMAIN` and `ConvexProviderWithClerk` on the client.
+- Why: Hosted auth flows are more reliable than a custom email/password form (fixes intermittent signup failures), while Convex continues to authorize requests using the Clerk-issued JWT's `tokenIdentifier` and `email`.
 
 ## ADR-004: Tailwind CSS v4 UI foundation
 

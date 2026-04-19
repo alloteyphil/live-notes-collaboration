@@ -5,6 +5,8 @@
 - Node.js 20+
 - npm
 - Convex account and project linked via `npx convex dev`
+- Clerk account with a development application created at
+  [dashboard.clerk.com](https://dashboard.clerk.com/)
 
 ## Environment Sources
 
@@ -18,21 +20,26 @@ This project uses two env sources:
 ```env
 CONVEX_DEPLOYMENT=<your deployment id>
 NEXT_PUBLIC_CONVEX_URL=<your convex cloud url>
-NEXT_PUBLIC_CONVEX_SITE_URL=<your convex site url ending in .convex.site>
+
+# Clerk (from the Clerk dashboard → API Keys)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
 ```
 
 ## Required Convex env
 
-Set these once:
+Set once so Convex validates Clerk JWTs. Get the Frontend API URL from
+`https://dashboard.clerk.com/apps/setup/convex` after activating the Convex
+integration:
 
 ```bash
-npx convex env set BETTER_AUTH_SECRET "<strong-random-secret>"
-npx convex env set SITE_URL "http://localhost:3000"
+npx convex env set CLERK_JWT_ISSUER_DOMAIN "https://<your-clerk-frontend-api>"
 ```
 
 ## Optional Convex env (recommended for admin tooling)
 
-To allow `clearAppData` admin reset in `convex/admin.ts`, configure admin emails:
+To allow `clearAppData` admin reset in `convex/admin.ts`, configure admin
+emails (these must match the primary email of the signed-in Clerk user):
 
 ```bash
 npx convex env set ADMIN_EMAILS "admin1@example.com,admin2@example.com"
@@ -64,8 +71,8 @@ Open `http://localhost:3000`.
 
 ## Typical flow
 
-1. Sign up/sign in on home page.
-2. Open dashboard.
-3. Create workspace.
-4. Open workspace and create note.
-5. Open note and test autosave.
+1. Click "Create account" on the home page and complete Clerk sign-up.
+2. Land on the dashboard (protected by Clerk middleware).
+3. Create a workspace.
+4. Open the workspace and create a note.
+5. Open the note and test autosave.

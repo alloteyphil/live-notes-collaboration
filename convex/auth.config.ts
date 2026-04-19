@@ -1,6 +1,12 @@
-import { getAuthConfigProvider } from "@convex-dev/better-auth/auth-config";
 import type { AuthConfig } from "convex/server";
 
+const clerkJwtIssuerDomain = process.env.CLERK_JWT_ISSUER_DOMAIN ?? "";
+
 export default {
-  providers: [getAuthConfigProvider()],
+  providers: [
+    {
+      domain: clerkJwtIssuerDomain,
+      applicationID: "convex",
+    },
+  ],
 } satisfies AuthConfig;

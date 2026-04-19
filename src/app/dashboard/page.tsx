@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { authClient } from "@/lib/auth-client";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { ContentCard } from "@/components/content-card";
 import { EmptyState } from "@/components/empty-state";
 import { NavHeader } from "@/components/nav-header";
@@ -18,16 +18,29 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight, FolderOpen, Loader2, Plus, Search } from "lucide-react";
 
 export default function DashboardPage() {
-  const { data: session, isPending } = authClient.useSession();
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
+  const { isLoading: isConvexAuthLoading, isAuthenticated: isConvexAuthenticated } = useConvexAuth();
+  const isPending = !isLoaded;
+  const userEmail = user?.primaryEmailAddress?.emailAddress ?? "";
+  const session = useMemo(
+    () => (isSignedIn ? { user: { email: userEmail } } : null),
+    [isSignedIn, userEmail],
+  );
+  const canRunProtectedQueries = Boolean(session) && isConvexAuthenticated;
+  const sessionPending = isPending || (Boolean(session) && isConvexAuthLoading);
   const { showToast } = useToast();
   const {
     results: workspaces,
     status: workspacePaginationStatus,
     loadMore: loadMoreWorkspaces,
-  } = usePaginatedQuery(api.workspaces.listPaginated, session ? {} : "skip", {
+  } = usePaginatedQuery(api.workspaces.listPaginated, canRunProtectedQueries ? {} : "skip", {
     initialNumItems: 12,
   });
-  const pendingInvites = useQuery(api.workspaces.listMyPendingInvites, session ? {} : "skip");
+  const pendingInvites = useQuery(
+    api.workspaces.listMyPendingInvites,
+    canRunProtectedQueries ? {} : "skip",
+  );
   const createWorkspace = useMutation(api.workspaces.create);
   const claimInvites = useMutation(api.workspaces.claimInvites);
 
@@ -39,7 +52,7 @@ export default function DashboardPage() {
   const lastClaimAttemptRef = useRef<string>("");
 
   useEffect(() => {
-    if (!session) {
+    if (!canRunProtectedQueries) {
       claimInFlightRef.current = false;
       lastClaimAttemptRef.current = "";
       return;
@@ -70,7 +83,7 @@ export default function DashboardPage() {
       .finally(() => {
         claimInFlightRef.current = false;
       });
-  }, [claimInvites, pendingInvites, session, showToast]);
+  }, [canRunProtectedQueries, claimInvites, pendingInvites, showToast]);
 
   const filteredWorkspaces = useMemo(() => {
     return workspaces.filter((workspace) =>
@@ -112,10 +125,10 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <NavHeader
         isSignedIn={Boolean(session)}
-        sessionPending={isPending}
+        sessionPending={sessionPending}
         userEmail={session?.user.email}
         onSignOut={async () => {
-          await authClient.signOut();
+          await signOut({ redirectUrl: "/" });
         }}
       />
 
@@ -130,7 +143,7 @@ export default function DashboardPage() {
             }
           />
 
-          {!session && !isPending ? (
+          {!session && !sessionPending ? (
             <ContentCard title="Authentication required">
               <EmptyState
                 icon={FolderOpen}
@@ -138,7 +151,7 @@ export default function DashboardPage() {
                 description="Your workspace list is available once you sign in."
                 action={
                   <Button asChild>
-                    <Link href="/">Go to sign in</Link>
+                    <Link href="/sign-in">Go to sign in</Link>
                   </Button>
                 }
               />
@@ -163,10 +176,13 @@ export default function DashboardPage() {
                 placeholder="Workspace name"
                 value={workspaceName}
                 onChange={(event) => setWorkspaceName(event.target.value)}
-                disabled={!session || isCreating}
+                disabled={!canRunProtectedQueries || isCreating}
                 className="flex-1"
               />
-              <Button type="submit" disabled={!session || isCreating || !workspaceName.trim()}>
+              <Button
+                type="submit"
+                disabled={!canRunProtectedQueries || isCreating || !workspaceName.trim()}
+              >
                 {isCreating ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

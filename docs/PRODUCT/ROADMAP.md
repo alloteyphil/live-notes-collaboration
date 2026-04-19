@@ -4,7 +4,7 @@
 
 - [x] Initialize Next.js + TypeScript project.
 - [x] Install and configure Convex.
-- [x] Configure Better Auth + Convex integration.
+- [x] Configure Clerk + Convex integration (migrated from Better Auth).
 - [x] Add base layout and landing page.
 
 ## Phase 1: Auth and Workspace

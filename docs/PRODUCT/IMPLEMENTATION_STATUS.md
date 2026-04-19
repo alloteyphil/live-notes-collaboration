@@ -6,7 +6,7 @@ Last updated: 2026-04-16
 
 ## Authentication
 
-- Better Auth integrated with Convex.
+- Clerk authentication integrated with Convex via `ConvexProviderWithClerk` and `CLERK_JWT_ISSUER_DOMAIN`.
 - Sign up, sign in, and sign out are working in UI.
 - Session-aware protected views on dashboard/workspace/note routes.
 

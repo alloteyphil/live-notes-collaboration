@@ -97,7 +97,7 @@ export function NavHeader({
             </DropdownMenu>
           ) : (
             <Button size="sm" asChild>
-              <Link href="/">Sign in</Link>
+              <Link href="/sign-in">Sign in</Link>
             </Button>
           )}
         </div>

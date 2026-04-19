@@ -5,7 +5,7 @@
 - Frontend: Next.js (App Router) + TypeScript
 - Backend: Convex (queries, mutations, realtime subscriptions)
 - State/Data Fetching: Convex React client
-- Auth: Better Auth + Convex auth provider
+- Auth: Clerk (hosted) + Convex auth provider validating Clerk JWTs
 - Styling: Tailwind CSS v4
 - Hosting: Vercel (frontend) + Convex managed backend
 
