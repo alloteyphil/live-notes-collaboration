@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { CheckCircle2, MessageSquare } from "lucide-react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ type Comment = {
 interface CommentsDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When set, scrolls this comment into view while the drawer is open. */
+  highlightCommentId?: Id<"noteComments"> | null;
   comments: ReadonlyArray<Comment> | undefined;
   canComment: boolean;
   commentDraft: string;
@@ -32,6 +35,7 @@ interface CommentsDrawerProps {
 export function CommentsDrawer({
   open,
   onOpenChange,
+  highlightCommentId,
   comments,
   canComment,
   commentDraft,
@@ -42,6 +46,13 @@ export function CommentsDrawer({
 }: CommentsDrawerProps) {
   const unresolved = comments?.filter((c) => c.status !== "resolved") ?? [];
   const resolved = comments?.filter((c) => c.status === "resolved") ?? [];
+  useEffect(() => {
+    if (!open || !highlightCommentId) return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`comment-${highlightCommentId}`);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }, [open, highlightCommentId, comments]);
 
   return (
     <NoteDrawer
@@ -101,6 +112,7 @@ export function CommentsDrawer({
                 label="Open"
                 comments={unresolved}
                 onToggleResolve={onToggleResolve}
+                highlightCommentId={highlightCommentId}
               />
             ) : null}
             {resolved.length > 0 ? (
@@ -108,6 +120,7 @@ export function CommentsDrawer({
                 label="Resolved"
                 comments={resolved}
                 onToggleResolve={onToggleResolve}
+                highlightCommentId={highlightCommentId}
                 muted
               />
             ) : null}
@@ -122,10 +135,11 @@ interface CommentGroupProps {
   label: string;
   comments: ReadonlyArray<Comment>;
   onToggleResolve: (commentId: Id<"noteComments">, resolved: boolean) => void;
+  highlightCommentId?: Id<"noteComments"> | null;
   muted?: boolean;
 }
 
-function CommentGroup({ label, comments, onToggleResolve, muted }: CommentGroupProps) {
+function CommentGroup({ label, comments, onToggleResolve, highlightCommentId, muted }: CommentGroupProps) {
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -137,9 +151,11 @@ function CommentGroup({ label, comments, onToggleResolve, muted }: CommentGroupP
           return (
             <div
               key={comment._id}
+              id={`comment-${comment._id}`}
               className={cn(
                 "rounded-md border border-border p-3 text-sm",
                 muted ? "bg-muted/30" : "bg-background",
+                highlightCommentId === comment._id ? "ring-2 ring-primary/40" : undefined,
               )}
             >
               <div className="mb-2 flex items-start justify-between gap-2">

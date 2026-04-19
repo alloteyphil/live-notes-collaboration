@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent } from "react";
-import { Loader2, Mail, Send, Trash2, UserPlus } from "lucide-react";
+import { FormEvent, useState } from "react";
+import { Loader2, Mail, Send, Trash2, UserPlus, UserRoundCog } from "lucide-react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,8 @@ interface MembersPanelProps {
   onInviteRoleChange: (value: "editor" | "viewer") => void;
   onInvite: (event: FormEvent<HTMLFormElement>) => void;
   isInviting: boolean;
+  onTransferOwnership?: (newOwnerTokenIdentifier: string) => void | Promise<void>;
+  isTransferringOwnership?: boolean;
 }
 
 export function MembersPanel({
@@ -51,8 +53,12 @@ export function MembersPanel({
   onInviteRoleChange,
   onInvite,
   isInviting,
+  onTransferOwnership,
+  isTransferringOwnership = false,
 }: MembersPanelProps) {
   const isOwner = currentUserRole === "owner";
+  const [transferTarget, setTransferTarget] = useState("");
+  const editorMembers = members.filter((m) => m.role === "editor");
 
   return (
     <div className="space-y-6">
@@ -178,6 +184,65 @@ export function MembersPanel({
           <UserPlus className="h-4 w-4" />
           Only workspace owners can invite or manage members.
         </div>
+      ) : null}
+
+      {isOwner && onTransferOwnership ? (
+        <ContentCard
+          title="Transfer ownership"
+          description="The new owner must already be an editor. You will become an editor after transfer."
+        >
+          {editorMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Invite someone as an editor before you can transfer ownership.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Select value={transferTarget} onValueChange={setTransferTarget}>
+                <SelectTrigger className="sm:max-w-xs">
+                  <SelectValue placeholder="Choose new owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  {editorMembers.map((member) => (
+                    <SelectItem key={member.tokenIdentifier} value={member.tokenIdentifier}>
+                      {member.displayName}
+                      {member.userEmail ? ` (${member.userEmail})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                disabled={!transferTarget || isTransferringOwnership}
+                onClick={() => {
+                  const picked = editorMembers.find((m) => m.tokenIdentifier === transferTarget);
+                  if (
+                    !picked ||
+                    !window.confirm(
+                      `Transfer ownership to ${picked.displayName}? You will become an editor.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  void onTransferOwnership(transferTarget);
+                }}
+              >
+                {isTransferringOwnership ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Transferring…
+                  </>
+                ) : (
+                  <>
+                    <UserRoundCog className="mr-2 h-4 w-4" />
+                    Transfer ownership
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </ContentCard>
       ) : null}
     </div>
   );

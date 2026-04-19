@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Loader2, Mail, X } from "lucide-react";
+import { Check, Copy, Loader2, Mail, X } from "lucide-react";
+import { useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ContentCard } from "@/components/content-card";
@@ -13,6 +14,7 @@ type PendingInvite = {
   invitedEmail: string;
   role: "editor" | "viewer";
   createdAt: number;
+  claimToken: string | null;
 };
 
 type AcceptedInvite = {
@@ -29,6 +31,13 @@ interface InvitesSubPanelProps {
   currentUserRole: Role;
   updatingInviteId: Id<"workspaceInvites"> | null;
   onRevoke: (inviteId: Id<"workspaceInvites">) => void;
+  /** Public site URL for invite links (e.g. NEXT_PUBLIC_APP_URL or window.location.origin). */
+  inviteBaseUrl: string;
+}
+
+function buildInviteUrl(baseUrl: string, claimToken: string): string {
+  const trimmed = baseUrl.replace(/\/$/, "");
+  return `${trimmed}/join/${encodeURIComponent(claimToken)}`;
 }
 
 export function InvitesSubPanel({
@@ -37,8 +46,10 @@ export function InvitesSubPanel({
   currentUserRole,
   updatingInviteId,
   onRevoke,
+  inviteBaseUrl,
 }: InvitesSubPanelProps) {
   const isOwner = currentUserRole === "owner";
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
@@ -69,8 +80,38 @@ export function InvitesSubPanel({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 self-start sm:self-auto">
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
                   <RoleBadge role={invite.role} showIcon={false} />
+                  {isOwner && invite.claimToken ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      onClick={async () => {
+                        const url = buildInviteUrl(inviteBaseUrl, invite.claimToken!);
+                        try {
+                          await navigator.clipboard.writeText(url);
+                          setCopiedId(invite._id);
+                          setTimeout(() => setCopiedId((current) => (current === invite._id ? null : current)), 2000);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    >
+                      {copiedId === invite._id ? (
+                        <>
+                          <Check className="h-3.5 w-3.5" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy link
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
                   {isOwner ? (
                     <Button
                       variant="ghost"

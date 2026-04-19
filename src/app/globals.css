@@ -143,3 +143,62 @@
   }
 }
 
+@layer components {
+  .markdown-preview {
+    @apply text-foreground;
+  }
+
+  .markdown-preview h1 {
+    @apply mt-6 text-2xl font-semibold tracking-tight first:mt-0;
+  }
+
+  .markdown-preview h2 {
+    @apply mt-5 text-xl font-semibold tracking-tight;
+  }
+
+  .markdown-preview h3 {
+    @apply mt-4 text-lg font-semibold;
+  }
+
+  .markdown-preview p {
+    @apply mt-3 leading-relaxed first:mt-0;
+  }
+
+  .markdown-preview ul,
+  .markdown-preview ol {
+    @apply my-3 ml-6 list-outside;
+  }
+
+  .markdown-preview ul {
+    @apply list-disc;
+  }
+
+  .markdown-preview ol {
+    @apply list-decimal;
+  }
+
+  .markdown-preview li {
+    @apply mt-1;
+  }
+
+  .markdown-preview code {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.9em];
+  }
+
+  .markdown-preview pre {
+    @apply my-3 overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 font-mono text-sm;
+  }
+
+  .markdown-preview pre code {
+    @apply bg-transparent p-0;
+  }
+
+  .markdown-preview a {
+    @apply text-primary underline underline-offset-2;
+  }
+
+  .markdown-preview blockquote {
+    @apply my-3 border-l-2 border-border pl-3 text-muted-foreground;
+  }
+}
+

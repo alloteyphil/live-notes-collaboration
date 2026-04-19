@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,11 @@ interface NoteDrawerProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /**
+   * When true, render the overlay with `createPortal` on `document.body` and a higher z-index.
+   * Use for drawers triggered from inside `sticky` / `backdrop-blur` headers so `fixed` is not clipped.
+   */
+  usePortal?: boolean;
 }
 
 export function NoteDrawer({
@@ -21,7 +27,14 @@ export function NoteDrawer({
   description,
   children,
   footer,
+  usePortal = false,
 }: NoteDrawerProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const original = document.body.style.overflow;
@@ -36,10 +49,11 @@ export function NoteDrawer({
     };
   }, [open, onOpenChange]);
 
-  return (
+  const shell = (
     <div
       className={cn(
-        "fixed inset-0 z-50",
+        "fixed inset-0",
+        usePortal ? "z-[100]" : "z-50",
         open ? "pointer-events-auto" : "pointer-events-none",
       )}
       aria-hidden={!open}
@@ -84,4 +98,13 @@ export function NoteDrawer({
       </div>
     </div>
   );
+
+  if (usePortal) {
+    if (!mounted || typeof document === "undefined") {
+      return null;
+    }
+    return createPortal(shell, document.body);
+  }
+
+  return shell;
 }

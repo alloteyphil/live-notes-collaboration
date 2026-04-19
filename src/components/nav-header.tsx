@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { NotificationsInbox } from "@/components/notifications/notifications-inbox";
 
 interface NavHeaderProps {
   isSignedIn?: boolean;
@@ -55,6 +56,7 @@ export function NavHeader({
         </div>
 
         <div className="flex items-center gap-2">
+          {!sessionPending && isSignedIn ? <NotificationsInbox /> : null}
           {sessionPending ? (
             <div className="flex items-center gap-2 rounded-md px-2 py-1">
               <div className="h-6 w-6 animate-pulse rounded-full bg-muted" />

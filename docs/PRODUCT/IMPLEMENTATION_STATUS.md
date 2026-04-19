@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-04-16
+Last updated: 2026-04-19
 
 ## Completed so far
 
@@ -9,6 +9,7 @@ Last updated: 2026-04-16
 - Clerk authentication integrated with Convex via `ConvexProviderWithClerk` and `CLERK_JWT_ISSUER_DOMAIN`.
 - Sign up, sign in, and sign out are working in UI.
 - Session-aware protected views on dashboard/workspace/note routes.
+- Optional `redirect_url` query parameter on `/sign-in` and `/sign-up` for post-auth return to paths such as `/join/[token]`.
 
 ## Workspace management
 
@@ -18,17 +19,21 @@ Last updated: 2026-04-16
 - Owner can invite members by email with role (`editor` / `viewer`).
 - Invite claim flow runs reactively from dashboard while invited user is online.
 - Owner can update member role, remove members, and revoke pending invites.
+- **Shareable invite links:** pending invites store a `claimToken`; owners copy `/join/{token}` from the Invites tab. Recipients authenticate and accept via `workspaces.claimInviteByToken` (email must match the invite).
+- **Owner transfer:** owner can transfer workspace ownership to an existing **editor**; prior owner becomes an editor (`workspaces.transferOwnership`).
 
 ## Notes and editor
 
 - Create notes from workspace page.
 - Create notes from templates (default/global + workspace templates).
+- **Templates tab** on the workspace: create, edit, and delete workspace-scoped templates (`notes.createTemplate`, `updateTemplate`, `deleteTemplate`).
 - Open note editor route by note id.
 - Low-latency autosave for title and content.
 - Manual save shortcut (`Cmd/Ctrl+S`) and blur flush save.
 - Save status + last saved metadata in editor.
 - Offline-aware retry path for failed saves with exponential backoff.
 - Save failure and recovery toast feedback.
+- **Markdown preview** in the note body (Write / Preview toggle; `react-markdown` + styles in `globals.css`).
 - Note lifecycle controls:
   - Archive / unarchive notes.
   - Delete notes (with related presence/comments/revisions cleanup).
@@ -45,6 +50,7 @@ Last updated: 2026-04-16
 - Lightweight comments with resolve/reopen status.
 - `@email` mention parsing from comments.
 - Mention-driven notifications persisted in backend (read/unread model).
+- **Notifications inbox** in the global nav: paginated list, unread badge, mark read on open, mark all read, deep links to `/note/[id]` and `?comment=` to open the comments drawer.
 
 ## Discovery and productivity
 
@@ -71,6 +77,7 @@ Last updated: 2026-04-16
   - `/dashboard`
   - `/workspace/[id]`
   - `/note/[id]`
+  - `/join/[token]`
   - `/workspace/[id]/whiteboard`
 
 ## Whiteboard
@@ -88,19 +95,16 @@ Last updated: 2026-04-16
 
 ## Known limitations
 
-- No owner transfer flow yet.
-- No invite email sending (invites are in-app and claimed on sign-in).
+- No automated outbound invite email (shareable links + in-app claim; optional Resend path described in `docs/RUNBOOK/INVITES.md`).
 - Editor is low-latency autosave, not CRDT/OT true per-character merge.
 - Whiteboard has basic live scene sync only (no multi-cursor presence or conflict-aware merging yet).
 - Screen share collaboration is deferred to a later phase.
 - Comment system is lightweight and not inline-anchor/range-aware yet.
-- Notifications are backend-complete but do not yet have a dedicated inbox UI in navigation.
 
 ## Suggested next milestones
 
-1. Add notifications inbox UI (mark read, unread badge, deep links).
-2. Add inline/range-anchored comments in note editor.
-3. Add template management UI (create/edit/delete templates in workspace settings).
-4. Add stronger note search ranking and highlight matches in editor.
-5. Add test coverage for archive/delete/revision restore/comment mention flows.
-6. Add realtime multi-user whiteboard synchronization (presence + conflict handling).
+1. Add inline/range-anchored comments in note editor.
+2. Add stronger note search ranking and highlight matches in editor.
+3. Add test coverage for archive/delete/revision restore/comment mention flows.
+4. Add realtime multi-user whiteboard synchronization (presence + conflict handling).
+5. Optional transactional email for invites via Convex action + provider API key.

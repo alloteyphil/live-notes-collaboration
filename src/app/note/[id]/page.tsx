@@ -1,7 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
@@ -27,7 +27,7 @@ function buildTypingLabel(displayNames: string[]): string {
   return `${displayNames[0]} and ${displayNames.length - 1} others are typing...`;
 }
 
-export default function NoteEditorPage() {
+function NoteEditorPageInner() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { signOut } = useClerk();
   const { isLoading: isConvexAuthLoading, isAuthenticated: isConvexAuthenticated } = useConvexAuth();
@@ -41,7 +41,13 @@ export default function NoteEditorPage() {
   const sessionPending = isPending || (Boolean(session) && isConvexAuthLoading);
   const { showToast } = useToast();
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const noteId = params.id as Id<"notes">;
+  const highlightCommentIdParam = searchParams.get("comment");
+  const highlightCommentId =
+    highlightCommentIdParam && highlightCommentIdParam.length > 0
+      ? (highlightCommentIdParam as Id<"noteComments">)
+      : null;
 
   const note = useQuery(api.notes.getById, canRunProtectedQueries ? { noteId } : "skip");
   const workspace = useQuery(
@@ -394,6 +400,11 @@ export default function NoteEditorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!highlightCommentId) return;
+    setDrawer("comments");
+  }, [highlightCommentId]);
+
   const typingCollaborators =
     activeCollaborators?.filter(
       (collaborator) => collaborator.isTyping && !collaborator.isCurrentUser,
@@ -520,6 +531,7 @@ export default function NoteEditorPage() {
       <CommentsDrawer
         open={drawer === "comments"}
         onOpenChange={(open) => setDrawer(open ? "comments" : null)}
+        highlightCommentId={highlightCommentId}
         comments={comments ?? undefined}
         canComment={Boolean(session)}
         commentDraft={commentDraft}
@@ -540,5 +552,19 @@ export default function NoteEditorPage() {
         onRestore={(id) => void onRestoreRevision(id)}
       />
     </div>
+  );
+}
+
+export default function NoteEditorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+          Loading note…
+        </div>
+      }
+    >
+      <NoteEditorPageInner />
+    </Suspense>
   );
 }

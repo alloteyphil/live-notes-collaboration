@@ -33,10 +33,13 @@ export default defineSchema({
     acceptedByTokenIdentifier: v.optional(v.string()),
     createdAt: v.number(),
     acceptedAt: v.optional(v.number()),
+    /** Secret token for shareable invite links (optional for legacy rows). */
+    claimToken: v.optional(v.string()),
   })
     .index("by_workspace_id_and_invited_email", ["workspaceId", "invitedEmail"])
     .index("by_workspace_id_and_status", ["workspaceId", "status"])
-    .index("by_invited_email_and_status", ["invitedEmail", "status"]),
+    .index("by_invited_email_and_status", ["invitedEmail", "status"])
+    .index("by_claim_token", ["claimToken"]),
 
   notes: defineTable({
     workspaceId: v.id("workspaces"),

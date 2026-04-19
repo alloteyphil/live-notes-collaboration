@@ -1,7 +1,8 @@
 "use client";
 
-import { forwardRef } from "react";
-import { Clock, Lock, RefreshCw } from "lucide-react";
+import { forwardRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import { Clock, Eye, Lock, Pencil, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,6 +43,7 @@ export const NoteEditorSurface = forwardRef<HTMLTextAreaElement, NoteEditorSurfa
     },
     ref,
   ) => {
+    const [bodyTab, setBodyTab] = useState<"write" | "preview">("write");
     const wordCount = content.split(/\s+/).filter(Boolean).length;
     const charCount = content.length;
 
@@ -94,25 +96,58 @@ export const NoteEditorSurface = forwardRef<HTMLTextAreaElement, NoteEditorSurfa
           </div>
         </div>
 
+        <div className="flex items-center justify-end gap-1 border-b border-border px-4 py-2 sm:px-8">
+          <Button
+            type="button"
+            variant={bodyTab === "write" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            onClick={() => setBodyTab("write")}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Write
+          </Button>
+          <Button
+            type="button"
+            variant={bodyTab === "preview" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            onClick={() => setBodyTab("preview")}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Preview
+          </Button>
+        </div>
+
         <div className="px-4 pb-6 sm:px-8">
-          <Textarea
-            ref={ref}
-            value={content}
-            onChange={(event) => {
-              if (!canEditThisNote) return;
-              onContentChange(event.target.value, event.target.selectionStart);
-            }}
-            onBlur={onBlur}
-            onClick={(event) => onCursorPositionChange(event.currentTarget.selectionStart)}
-            onKeyUp={(event) => onCursorPositionChange(event.currentTarget.selectionStart)}
-            onSelect={(event) => onCursorPositionChange(event.currentTarget.selectionStart)}
-            placeholder="Start writing..."
-            disabled={!canEditThisNote}
-            className={cn(
-              "min-h-[calc(100vh-22rem)] resize-none border-0 bg-transparent p-0 text-base leading-relaxed placeholder:text-muted-foreground/40 focus-visible:ring-0",
-              !canEditThisNote ? "cursor-not-allowed opacity-80" : undefined,
-            )}
-          />
+          {bodyTab === "write" ? (
+            <Textarea
+              ref={ref}
+              value={content}
+              onChange={(event) => {
+                if (!canEditThisNote) return;
+                onContentChange(event.target.value, event.target.selectionStart);
+              }}
+              onBlur={onBlur}
+              onClick={(event) => onCursorPositionChange(event.currentTarget.selectionStart)}
+              onKeyUp={(event) => onCursorPositionChange(event.currentTarget.selectionStart)}
+              onSelect={(event) => onCursorPositionChange(event.currentTarget.selectionStart)}
+              placeholder="Start writing (Markdown supported in preview)..."
+              disabled={!canEditThisNote}
+              className={cn(
+                "min-h-[calc(100vh-22rem)] resize-none border-0 bg-transparent p-0 text-base leading-relaxed placeholder:text-muted-foreground/40 focus-visible:ring-0",
+                !canEditThisNote ? "cursor-not-allowed opacity-80" : undefined,
+              )}
+            />
+          ) : (
+            <div className="markdown-preview min-h-[calc(100vh-22rem)] py-1 text-base leading-relaxed">
+              {content.trim() ? (
+                <ReactMarkdown>{content}</ReactMarkdown>
+              ) : (
+                <p className="text-muted-foreground">Nothing to preview yet.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">

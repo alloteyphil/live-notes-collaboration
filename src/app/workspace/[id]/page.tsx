@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
@@ -23,6 +23,7 @@ import { WorkspaceHero } from "@/components/workspace/workspace-hero";
 import { OverviewPanel } from "@/components/workspace/overview-panel";
 import { MembersPanel } from "@/components/workspace/members-panel";
 import { InvitesSubPanel } from "@/components/workspace/invites-sub-panel";
+import { WorkspaceTemplatesPanel } from "@/components/workspace/workspace-templates-panel";
 
 const getInviteErrorMessage = (error: unknown) => {
   if (!(error instanceof Error)) return "Failed to send invite.";
@@ -35,7 +36,7 @@ const getInviteErrorMessage = (error: unknown) => {
   return error.message;
 };
 
-type WorkspaceTab = "overview" | "members" | "invites";
+type WorkspaceTab = "overview" | "members" | "invites" | "templates";
 
 export default function WorkspaceDetailPage() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -78,6 +79,10 @@ export default function WorkspaceDetailPage() {
   const revokeInvite = useMutation(api.workspaces.revokeInvite);
   const updateMemberRole = useMutation(api.workspaces.updateMemberRole);
   const removeMember = useMutation(api.workspaces.removeMember);
+  const transferOwnership = useMutation(api.workspaces.transferOwnership);
+  const createTemplate = useMutation(api.notes.createTemplate);
+  const updateTemplate = useMutation(api.notes.updateTemplate);
+  const deleteTemplate = useMutation(api.notes.deleteTemplate);
 
   const [noteTitle, setNoteTitle] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -89,6 +94,8 @@ export default function WorkspaceDetailPage() {
   const [memberFeedback, setMemberFeedback] = useState("");
   const [updatingMemberToken, setUpdatingMemberToken] = useState<string | null>(null);
   const [updatingInviteId, setUpdatingInviteId] = useState<Id<"workspaceInvites"> | null>(null);
+  const [isTransferringOwnership, setIsTransferringOwnership] = useState(false);
+  const [templateFeedback, setTemplateFeedback] = useState("");
   const searchNotes = useQuery(
     api.notes.searchNotes,
     canRunProtectedQueries && noteSearch.trim()
@@ -98,6 +105,14 @@ export default function WorkspaceDetailPage() {
   const templates = useQuery(
     api.notes.listTemplates,
     canRunProtectedQueries ? { workspaceId } : "skip",
+  );
+
+  const inviteBaseUrl = useMemo(
+    () =>
+      typeof window !== "undefined"
+        ? (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || window.location.origin)
+        : (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? ""),
+    [],
   );
 
   const onCreateNote = async (event: FormEvent<HTMLFormElement>) => {
@@ -230,6 +245,22 @@ export default function WorkspaceDetailPage() {
     }
   };
 
+  const onTransferOwnership = async (newOwnerTokenIdentifier: string) => {
+    setIsTransferringOwnership(true);
+    setMemberFeedback("");
+    try {
+      await transferOwnership({ workspaceId, newOwnerTokenIdentifier });
+      setMemberFeedback("Ownership transferred.");
+      showToast({ message: "You transferred workspace ownership.", variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to transfer ownership.";
+      setMemberFeedback(message);
+      showToast({ message, variant: "error" });
+    } finally {
+      setIsTransferringOwnership(false);
+    }
+  };
+
   const onRevokeInvite = async (inviteId: Id<"workspaceInvites">) => {
     setUpdatingInviteId(inviteId);
     setInviteFeedback("");
@@ -248,6 +279,58 @@ export default function WorkspaceDetailPage() {
 
   const focusSidebarCreate = () => {
     sidebarRef.current?.focusCreateInput();
+  };
+
+  const onCreateTemplate = async (args: { title: string; content: string }) => {
+    setTemplateFeedback("");
+    try {
+      await createTemplate({
+        workspaceId,
+        title: args.title,
+        content: args.content,
+      });
+      showToast({ message: "Template saved.", variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save template.";
+      setTemplateFeedback(message);
+      showToast({ message, variant: "error" });
+      throw error;
+    }
+  };
+
+  const onUpdateTemplate = async (args: {
+    templateId: Id<"noteTemplates">;
+    title: string;
+    content: string;
+  }) => {
+    setTemplateFeedback("");
+    try {
+      await updateTemplate({
+        workspaceId,
+        templateId: args.templateId,
+        title: args.title,
+        content: args.content,
+      });
+      showToast({ message: "Template updated.", variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update template.";
+      setTemplateFeedback(message);
+      showToast({ message, variant: "error" });
+      throw error;
+    }
+  };
+
+  const onDeleteTemplate = async (templateId: Id<"noteTemplates">) => {
+    setTemplateFeedback("");
+    try {
+      await deleteTemplate({ workspaceId, templateId });
+      showToast({ message: "Template deleted.", variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete template.";
+      setTemplateFeedback(message);
+      showToast({ message, variant: "error" });
+      throw error;
+    }
   };
 
   const canManageNotes =
@@ -353,6 +436,19 @@ export default function WorkspaceDetailPage() {
                   onDismiss={() => setMemberFeedback("")}
                 />
               ) : null}
+              {activeTab === "templates" && templateFeedback ? (
+                <StatusBanner
+                  variant={
+                    templateFeedback.includes("saved") ||
+                    templateFeedback.includes("updated") ||
+                    templateFeedback.includes("deleted")
+                      ? "success"
+                      : "error"
+                  }
+                  message={templateFeedback}
+                  onDismiss={() => setTemplateFeedback("")}
+                />
+              ) : null}
               {(activeTab === "members" || activeTab === "invites") && inviteFeedback ? (
                 <StatusBanner
                   variant={
@@ -394,6 +490,10 @@ export default function WorkspaceDetailPage() {
                   onInviteRoleChange={setInviteRole}
                   onInvite={onInviteMember}
                   isInviting={isInviting}
+                  onTransferOwnership={
+                    memberState.currentUserRole === "owner" ? onTransferOwnership : undefined
+                  }
+                  isTransferringOwnership={isTransferringOwnership}
                 />
               ) : null}
 
@@ -404,7 +504,24 @@ export default function WorkspaceDetailPage() {
                   currentUserRole={memberState.currentUserRole}
                   updatingInviteId={updatingInviteId}
                   onRevoke={onRevokeInvite}
+                  inviteBaseUrl={inviteBaseUrl || (typeof window !== "undefined" ? window.location.origin : "")}
                 />
+              ) : null}
+
+              {activeTab === "templates" && canManageNotes ? (
+                <WorkspaceTemplatesPanel
+                  templates={templates ?? undefined}
+                  onCreate={onCreateTemplate}
+                  onUpdate={onUpdateTemplate}
+                  onDelete={onDeleteTemplate}
+                />
+              ) : null}
+              {activeTab === "templates" && !canManageNotes ? (
+                <ContentCard>
+                  <p className="text-sm text-muted-foreground">
+                    Viewers cannot manage workspace templates.
+                  </p>
+                </ContentCard>
               ) : null}
             </section>
           </div>
@@ -425,6 +542,7 @@ function TabsBar({ active, onChange, pendingInvitesCount }: TabsBarProps) {
     { id: "overview", label: "Overview" },
     { id: "members", label: "Members" },
     { id: "invites", label: "Invites", count: pendingInvitesCount },
+    { id: "templates", label: "Templates" },
   ];
 
   return (

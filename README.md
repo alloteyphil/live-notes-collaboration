@@ -21,9 +21,21 @@ A portfolio-focused realtime notes app built with:
 - Note lifecycle: archive, unarchive, and delete notes.
 - Comment threads with resolve/reopen state.
 - `@email` mention parsing in comments with backend notifications.
+- **Notifications inbox** in the nav (read/unread, mark all read, deep links to notes and comments).
 - Note revision history with restore flow.
 - Workspace note search and template-based note creation.
+- **Workspace Templates** tab: create, edit, and delete workspace-scoped templates.
+- **Shareable invite links** (`/join/[token]`) with optional `redirect_url` on sign-in/sign-up; see `docs/RUNBOOK/INVITES.md`.
+- **Transfer workspace ownership** to an existing editor (former owner becomes editor).
+- **Markdown preview** in the note editor (Write / Preview).
 - Hardened admin reset guardrails (`ADMIN_EMAILS` allowlist + whiteboard reset coverage).
+
+## Portfolio
+
+- **Case study:** [docs/PRODUCT/CASE_STUDY.md](docs/PRODUCT/CASE_STUDY.md)
+- **Architecture diagram:** [docs/ARCH/ARCHITECTURE_DIAGRAM.md](docs/ARCH/ARCHITECTURE_DIAGRAM.md)
+- **Demo checklist:** [docs/PRODUCT/DEMO.md](docs/PRODUCT/DEMO.md)
+- **Production URL:** deploy Next.js (for example to [Vercel](https://vercel.com)) and Convex production, then replace this line with your live app URL.
 
 ## Docs Index
 
@@ -31,13 +43,17 @@ A portfolio-focused realtime notes app built with:
   - `docs/PRODUCT/PRD.md`
   - `docs/PRODUCT/ROADMAP.md`
   - `docs/PRODUCT/IMPLEMENTATION_STATUS.md`
+  - `docs/PRODUCT/CASE_STUDY.md`
+  - `docs/PRODUCT/DEMO.md`
 - Architecture
   - `docs/ARCH/ARCHITECTURE.md`
+  - `docs/ARCH/ARCHITECTURE_DIAGRAM.md`
   - `docs/ARCH/DATA_MODEL.md`
   - `docs/ARCH/API_EVENTS.md`
   - `docs/ARCH/DECISIONS.md`
 - Runbooks
   - `docs/RUNBOOK/LOCAL_DEV.md`
+  - `docs/RUNBOOK/INVITES.md`
   - `docs/RUNBOOK/TROUBLESHOOTING.md`
   - `docs/RUNBOOK/COLLABORATION_TEST_PLAN.md`
 
@@ -64,6 +80,8 @@ npm install
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 NEXT_PUBLIC_CONVEX_URL=https://<your-convex-deployment>.convex.cloud
+# Optional but recommended in production: canonical site URL for copied invite links
+# NEXT_PUBLIC_APP_URL=https://your-deployment.example
 ```
 
 4. Set Convex env so it validates Clerk JWTs:

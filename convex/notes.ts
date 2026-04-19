@@ -696,3 +696,47 @@ export const createTemplate = mutation({
     });
   },
 });
+
+export const updateTemplate = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    templateId: v.id("noteTemplates"),
+    title: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    await requireEditorMembership(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    const template = await ctx.db.get(args.templateId);
+    if (!template || template.scope !== "workspace" || template.workspaceId !== args.workspaceId) {
+      throw new Error("Template not found");
+    }
+
+    await ctx.db.patch(args.templateId, {
+      title: args.title.trim(),
+      content: args.content,
+    });
+
+    return { ok: true };
+  },
+});
+
+export const deleteTemplate = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    templateId: v.id("noteTemplates"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    await requireEditorMembership(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    const template = await ctx.db.get(args.templateId);
+    if (!template || template.scope !== "workspace" || template.workspaceId !== args.workspaceId) {
+      throw new Error("Template not found");
+    }
+
+    await ctx.db.delete(args.templateId);
+    return { ok: true };
+  },
+});

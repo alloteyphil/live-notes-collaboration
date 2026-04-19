@@ -16,6 +16,8 @@
 - Next.js offers production-ready routing and deployment ergonomics.
 - Combined stack is modern and interview-friendly.
 
+See also [ARCHITECTURE_DIAGRAM.md](./ARCHITECTURE_DIAGRAM.md) for a visual overview.
+
 ## High-Level Data Flow
 
 1. User opens app and authenticates.

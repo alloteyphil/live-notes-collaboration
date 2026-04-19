@@ -17,6 +17,26 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const isNotNull = <T>(value: T | null): value is T => value !== null;
 
+const randomInviteToken = (): string => {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+const uniqueClaimToken = async (ctx: MutationCtx): Promise<string> => {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const token = randomInviteToken();
+    const existing = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_claim_token", (q) => q.eq("claimToken", token))
+      .first();
+    if (!existing) {
+      return token;
+    }
+  }
+  throw new Error("Could not allocate invite link");
+};
+
 const requireWorkspaceMembership = async (
   ctx: QueryCtx | MutationCtx,
   workspaceId: Id<"workspaces">,
@@ -262,6 +282,8 @@ export const inviteMember = mutation({
       throw new Error("A pending invite already exists for this email");
     }
 
+    const claimToken = await uniqueClaimToken(ctx);
+
     await ctx.db.insert("workspaceInvites", {
       workspaceId: args.workspaceId,
       invitedEmail,
@@ -269,9 +291,96 @@ export const inviteMember = mutation({
       status: "pending",
       invitedByTokenIdentifier: identity.tokenIdentifier,
       createdAt: Date.now(),
+      claimToken,
     });
 
     return { ok: true };
+  },
+});
+
+/** Public preview for invite landing pages (no auth). */
+export const getInvitePreviewByToken = query({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const trimmed = args.token.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const invite = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_claim_token", (q) => q.eq("claimToken", trimmed))
+      .first();
+    if (!invite || invite.status !== "pending") {
+      return null;
+    }
+    const workspace = await ctx.db.get(invite.workspaceId);
+    if (!workspace) {
+      return null;
+    }
+    return {
+      workspaceName: workspace.name,
+      invitedEmail: invite.invitedEmail,
+      role: invite.role,
+    };
+  },
+});
+
+export const claimInviteByToken = mutation({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const email = identity.email ? normalizeEmail(identity.email) : null;
+    if (!email) {
+      throw new Error("Your account must have an email to accept this invite");
+    }
+
+    const trimmed = args.token.trim();
+    if (!trimmed) {
+      throw new Error("Invite link is invalid");
+    }
+
+    const invite = await ctx.db
+      .query("workspaceInvites")
+      .withIndex("by_claim_token", (q) => q.eq("claimToken", trimmed))
+      .first();
+
+    if (!invite || invite.status !== "pending") {
+      throw new Error("This invite is no longer valid");
+    }
+
+    if (normalizeEmail(invite.invitedEmail) !== email) {
+      throw new Error(
+        `Sign in as ${invite.invitedEmail} to accept this invite. You are signed in as ${email}.`,
+      );
+    }
+
+    const existingMembership = await requireWorkspaceMembership(
+      ctx,
+      invite.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!existingMembership) {
+      await ctx.db.insert("workspaceMembers", {
+        workspaceId: invite.workspaceId,
+        tokenIdentifier: identity.tokenIdentifier,
+        role: invite.role,
+        displayName: identity.name ?? undefined,
+        userEmail: email,
+        createdAt: Date.now(),
+      });
+    }
+
+    await ctx.db.patch(invite._id, {
+      status: "accepted",
+      acceptedByTokenIdentifier: identity.tokenIdentifier,
+      acceptedAt: Date.now(),
+    });
+
+    return { workspaceId: invite.workspaceId };
   },
 });
 
@@ -354,6 +463,7 @@ export const listMembers = query({
         invitedEmail: invite.invitedEmail,
         role: invite.role,
         createdAt: invite.createdAt,
+        claimToken: invite.claimToken ?? null,
       })),
       acceptedInvites: acceptedInvites
         .map((invite) => ({
@@ -434,6 +544,58 @@ export const removeMember = mutation({
     }
 
     await ctx.db.delete(targetMembership._id);
+    return { ok: true };
+  },
+});
+
+/** Current owner becomes editor; target must already be an editor. */
+export const transferOwnership = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    newOwnerTokenIdentifier: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const workspace = await requireWorkspaceOwner(ctx, args.workspaceId, identity.tokenIdentifier);
+
+    if (args.newOwnerTokenIdentifier === identity.tokenIdentifier) {
+      throw new Error("You are already the owner of this workspace");
+    }
+
+    const newOwnerMembership = await requireWorkspaceMembership(
+      ctx,
+      args.workspaceId,
+      args.newOwnerTokenIdentifier,
+    );
+    if (!newOwnerMembership) {
+      throw new Error("Member not found");
+    }
+    if (newOwnerMembership.role !== "editor") {
+      throw new Error("Transfer ownership is only available to members with the editor role");
+    }
+
+    const currentOwnerMembership = await requireWorkspaceMembership(
+      ctx,
+      args.workspaceId,
+      identity.tokenIdentifier,
+    );
+    if (!currentOwnerMembership || currentOwnerMembership.role !== "owner") {
+      throw new Error("Forbidden");
+    }
+
+    await ctx.db.patch(workspace._id, {
+      ownerTokenIdentifier: args.newOwnerTokenIdentifier,
+      updatedAt: Date.now(),
+    });
+
+    await ctx.db.patch(currentOwnerMembership._id, {
+      role: "editor",
+    });
+
+    await ctx.db.patch(newOwnerMembership._id, {
+      role: "owner",
+    });
+
     return { ok: true };
   },
 });
