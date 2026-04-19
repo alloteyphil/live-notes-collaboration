@@ -3,7 +3,16 @@
 import { AlertCircle, Check, Cloud, CloudOff, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type SaveState = "idle" | "typing" | "saving" | "saved" | "error" | "offline" | "retrying";
+export type SaveStatusState =
+  | "idle"
+  | "typing"
+  | "saving"
+  | "saved"
+  | "error"
+  | "offline"
+  | "retrying";
+
+type SaveState = SaveStatusState;
 
 interface SaveStatusProps {
   state: SaveState;

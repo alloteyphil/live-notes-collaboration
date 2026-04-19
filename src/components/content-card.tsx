@@ -20,15 +20,15 @@ export function ContentCard({
   return (
     <div className={cn("rounded-xl border border-border bg-card shadow-sm", className)}>
       {title || description || action ? (
-        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
+        <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-6">
           <div className="space-y-0.5">
             {title ? <h3 className="font-semibold text-card-foreground">{title}</h3> : null}
             {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
           </div>
-          {action ? <div className="shrink-0">{action}</div> : null}
+          {action ? <div className="w-full sm:w-auto sm:shrink-0">{action}</div> : null}
         </div>
       ) : null}
-      <div className={cn("p-6", contentClassName)}>{children}</div>
+      <div className={cn("p-4 sm:p-6", contentClassName)}>{children}</div>
     </div>
   );
 }

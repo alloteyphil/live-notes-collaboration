@@ -170,12 +170,12 @@ export default function WorkspaceWhiteboardPage() {
             </div>
           ) : whiteboardState ? (
             <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-              <div className="flex items-center justify-between border-b border-border px-4 py-2">
+              <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2">
                 <p className="text-sm text-muted-foreground">
                   Status: <span className="font-medium text-foreground">{statusLabel}</span>
                   {lastSavedAt ? ` • Last saved ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}
                 </p>
-                <Button variant="outline" size="sm" asChild>
+                <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                   <Link href={`/workspace/${workspaceId}`}>Back to workspace</Link>
                 </Button>
               </div>

@@ -166,6 +166,74 @@ export const listByWorkspacePaginated = query({
   },
 });
 
+export const listRecentAcrossWorkspaces = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireIdentity(ctx);
+    const rawLimit = args.limit ?? 10;
+    const limit = Math.max(1, Math.min(25, rawLimit));
+    const perWorkspace = Math.max(3, Math.min(10, limit));
+
+    const memberships = await ctx.db
+      .query("workspaceMembers")
+      .withIndex("by_token_identifier", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier),
+      )
+      .take(50);
+
+    if (memberships.length === 0) return [];
+
+    const notesPerWorkspace = await Promise.all(
+      memberships.map((membership) =>
+        ctx.db
+          .query("notes")
+          .withIndex("by_workspace_id_and_updated_at", (q) =>
+            q.eq("workspaceId", membership.workspaceId),
+          )
+          .order("desc")
+          .take(perWorkspace),
+      ),
+    );
+
+    const workspaces = await Promise.all(
+      memberships.map((membership) => ctx.db.get(membership.workspaceId)),
+    );
+
+    type RecentNote = {
+      _id: Id<"notes">;
+      title: string;
+      workspaceId: Id<"workspaces">;
+      workspaceName: string;
+      updatedAt: number;
+      role: "owner" | "editor" | "viewer";
+    };
+
+    const combined: Array<RecentNote> = [];
+    for (let i = 0; i < memberships.length; i += 1) {
+      const membership = memberships[i];
+      const workspace = workspaces[i];
+      if (!workspace) continue;
+      const notes = notesPerWorkspace[i];
+      for (const note of notes) {
+        if (note.isArchived) continue;
+        combined.push({
+          _id: note._id,
+          title: note.title,
+          workspaceId: note.workspaceId,
+          workspaceName: workspace.name,
+          updatedAt: note.updatedAt,
+          role: membership.role,
+        });
+      }
+    }
+
+    combined.sort((a, b) => b.updatedAt - a.updatedAt);
+    return combined.slice(0, limit);
+  },
+});
+
 export const getById = query({
   args: {
     noteId: v.id("notes"),

@@ -62,7 +62,7 @@ export default function HomePage() {
                   <FeatureItem icon={Shield} text="Invite-based access control" />
                 </div>
                 {isSignedIn ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
                     <Button size="lg" asChild>
                       <Link href="/dashboard">
                         Open Dashboard

@@ -18,12 +18,12 @@ interface Collaborator {
 }
 
 interface PresenceAvatarsProps {
-  collaborators: Collaborator[];
+  collaborators: ReadonlyArray<Collaborator>;
   maxVisible?: number;
   className?: string;
 }
 
-function getTypingLabel(collaborators: Collaborator[]): string {
+function getTypingLabel(collaborators: ReadonlyArray<Collaborator>): string {
   const typingCollaborators = collaborators.filter(
     (collaborator) => collaborator.isTyping && !collaborator.isCurrentUser,
   );

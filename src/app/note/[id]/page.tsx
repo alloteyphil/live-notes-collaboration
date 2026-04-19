@@ -1,25 +1,21 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
 import { NavHeader } from "@/components/nav-header";
-import { PresenceAvatars } from "@/components/presence-avatars";
-import { SaveStatus } from "@/components/save-status";
 import { StatusBanner } from "@/components/status-banner";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { useToast } from "@/components/toast-provider";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, Clock, Lock, MessageSquare, RefreshCw, Trash2, Undo2, Users } from "lucide-react";
+import { NoteToolbar } from "@/components/note/note-toolbar";
+import { NoteEditorSurface } from "@/components/note/note-editor-surface";
+import { CommentsDrawer } from "@/components/note/comments-drawer";
+import { RevisionsDrawer } from "@/components/note/revisions-drawer";
 
 type SaveState = "idle" | "typing" | "saving" | "saved" | "error";
+type Drawer = "comments" | "revisions" | null;
 const AUTOSAVE_DEBOUNCE_MS = 220;
 const RETRY_BASE_DELAY_MS = 1000;
 const RETRY_MAX_DELAY_MS = 15000;
@@ -48,6 +44,10 @@ export default function NoteEditorPage() {
   const noteId = params.id as Id<"notes">;
 
   const note = useQuery(api.notes.getById, canRunProtectedQueries ? { noteId } : "skip");
+  const workspace = useQuery(
+    api.workspaces.getById,
+    canRunProtectedQueries && note ? { workspaceId: note.workspaceId } : "skip",
+  );
   const activeCollaborators = useQuery(
     api.presence.listByNote,
     canRunProtectedQueries ? { noteId } : "skip",
@@ -89,6 +89,7 @@ export default function NoteEditorPage() {
   const [commentDraft, setCommentDraft] = useState("");
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isRestoringRevisionId, setIsRestoringRevisionId] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<Drawer>(null);
 
   const lastSyncedRef = useRef({ title: "", content: "" });
   const previousCanEditRef = useRef<boolean | null>(null);
@@ -408,6 +409,15 @@ export default function NoteEditorPage() {
       isCurrentUser: collaborator.isCurrentUser,
     })) ?? [];
 
+  const saveStatusUi = !isOnline
+    ? ("offline" as const)
+    : retryNeeded
+      ? ("retrying" as const)
+      : saveStatus;
+
+  const commentsCount = comments?.length ?? 0;
+  const revisionsCount = revisions.length;
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <NavHeader
@@ -420,64 +430,24 @@ export default function NoteEditorPage() {
       />
 
       <main className="flex flex-1 flex-col">
-        <div className="supports-backdrop-filter:bg-background/80 sticky top-14 z-40 border-b border-border bg-background/95 backdrop-blur">
-          <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
-                <Link href="/dashboard">
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Dashboard
-                </Link>
-              </Button>
-              <div className="flex items-center gap-4">
-                {note ? (
-                  <div className="flex items-center gap-2">
-                    {note.isArchived ? <Badge variant="warning">Archived</Badge> : null}
-                    {canEdit ? (
-                      <>
-                        <Button variant="outline" size="sm" onClick={() => void onArchiveToggle()}>
-                          {note.isArchived ? <Undo2 className="mr-1 h-4 w-4" /> : null}
-                          {note.isArchived ? "Unarchive" : "Archive"}
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={() => void onDelete()}>
-                          <Trash2 className="mr-1 h-4 w-4" />
-                          Delete
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="flex items-center gap-2">
-                  <PresenceAvatars collaborators={collaborators} maxVisible={3} />
-                  <span className="hidden text-sm text-muted-foreground sm:inline">
-                    <Users className="mr-1 inline h-4 w-4" />
-                    {collaborators.length} online
-                  </span>
-                </div>
-                <SaveStatus
-                  state={
-                    !isOnline
-                      ? "offline"
-                      : retryNeeded
-                        ? "retrying"
-                        : saveStatus === "saving"
-                          ? "saving"
-                          : saveStatus === "saved"
-                            ? "saved"
-                            : saveStatus === "error"
-                              ? "error"
-                              : saveStatus === "typing"
-                                ? "typing"
-                                : "idle"
-                  }
-                  lastSaved={effectiveLastSavedAt ? new Date(effectiveLastSavedAt) : null}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+        <NoteToolbar
+          workspaceId={note?.workspaceId ?? null}
+          workspaceName={workspace?.name ?? null}
+          noteTitle={note?.title ?? null}
+          isArchived={note?.isArchived ?? false}
+          canEdit={canEdit}
+          onArchiveToggle={() => void onArchiveToggle()}
+          onDelete={() => void onDelete()}
+          onOpenComments={() => setDrawer("comments")}
+          onOpenRevisions={() => setDrawer("revisions")}
+          commentsCount={commentsCount}
+          revisionsCount={revisionsCount}
+          collaborators={collaborators}
+          saveState={saveStatusUi}
+          lastSaved={effectiveLastSavedAt ? new Date(effectiveLastSavedAt) : null}
+        />
 
-        <div className="mx-auto w-full max-w-4xl space-y-4 px-4 pt-6 sm:px-6">
+        <div className="mx-auto w-full max-w-3xl space-y-3 px-4 pt-4 sm:px-6">
           {!session && !sessionPending ? (
             <StatusBanner variant="warning" message="Sign in to edit and collaborate on notes." />
           ) : null}
@@ -506,203 +476,69 @@ export default function NoteEditorPage() {
           ) : null}
         </div>
 
-        <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6">
+        <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 lg:py-10">
           {isPending || note === undefined ? (
-            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">Loading note...</div>
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm text-sm text-muted-foreground">
+              Loading note...
+            </div>
           ) : note ? (
-            <>
-            <div className="rounded-xl border border-border bg-card shadow-sm">
-              <div className="border-b border-border px-6 py-3 text-sm text-muted-foreground">
-                <div
-                  className={cn(
-                    "flex min-h-5 items-center gap-2 transition-opacity",
-                    typingLabel ? "opacity-100" : "opacity-0",
-                  )}
-                >
-                  <span className="flex h-2 w-2 animate-pulse rounded-full bg-primary" />
-                  <span>{typingLabel || "\u00A0"}</span>
-                </div>
-              </div>
-              <div className="border-b border-border px-6 py-4">
-                <Input
-                  value={title}
-                  onChange={(event) => {
-                    if (!canEditThisNote) return;
-                    setTitleInput(event.target.value);
-                    setTitleDirty(true);
-                    setSaveStatus("typing");
-                    markTyping();
-                  }}
-                  onBlur={() => {
-                    if (canEditThisNote) {
-                      setIsTyping(false);
-                      flushSaveNow();
-                    }
-                  }}
-                  placeholder="Untitled note"
-                  disabled={!canEditThisNote}
-                  className={cn(
-                    "border-0 bg-transparent p-0 text-2xl font-semibold placeholder:text-muted-foreground/50 focus-visible:ring-0",
-                    !canEditThisNote ? "cursor-not-allowed opacity-70" : undefined,
-                  )}
-                />
-                <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Last edited{" "}
-                    {effectiveLastSavedAt ? new Date(effectiveLastSavedAt).toLocaleTimeString() : "Not saved yet"}
-                  </span>
-                  {!canEditThisNote ? (
-                    <span className="flex items-center gap-1 text-warning">
-                      <Lock className="h-3 w-3" />
-                      Read only
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="px-6 py-4">
-                <Textarea
-                  value={content}
-                  onChange={(event) => {
-                    if (!canEditThisNote) return;
-                    setContentInput(event.target.value);
-                    setContentDirty(true);
-                    setSaveStatus("typing");
-                    setCursorPosition(event.target.selectionStart);
-                    markTyping();
-                  }}
-                  onBlur={() => {
-                    if (canEditThisNote) {
-                      setIsTyping(false);
-                      flushSaveNow();
-                    }
-                  }}
-                  onClick={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-                  onKeyUp={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-                  onSelect={(event) => setCursorPosition(event.currentTarget.selectionStart)}
-                  placeholder="Start writing..."
-                  disabled={!canEditThisNote}
-                  className={cn(
-                    "min-h-[50vh] resize-none border-0 bg-transparent p-0 font-mono text-base leading-relaxed placeholder:text-muted-foreground/50 focus-visible:ring-0",
-                    !canEditThisNote ? "cursor-not-allowed opacity-70" : undefined,
-                  )}
-                />
-              </div>
-              <div className="flex items-center justify-between border-t border-border px-6 py-3 text-xs text-muted-foreground">
-                <div className="flex items-center gap-4">
-                  <span>{content.split(/\s+/).filter(Boolean).length} words</span>
-                  <span>{content.length} characters</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {saveStatus === "error" ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={flushSaveNow}
-                      className="h-7 text-xs text-destructive hover:text-destructive"
-                    >
-                      <RefreshCw className="mr-1 h-3 w-3" />
-                      Retry save
-                    </Button>
-                  ) : null}
-                  {saveStatus === "saved" && !hasUnsavedChanges ? (
-                    <span className="text-success">All changes saved</span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 space-y-6">
-              <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-card-foreground">Comments</h3>
-                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="mb-3 flex gap-2">
-                  <Input
-                    placeholder="Add a comment. Mention teammates with @email.com"
-                    value={commentDraft}
-                    onChange={(event) => setCommentDraft(event.target.value)}
-                    disabled={!session || isSubmittingComment}
-                  />
-                  <Button
-                    onClick={() => void onCreateComment()}
-                    disabled={!session || isSubmittingComment || !commentDraft.trim()}
-                  >
-                    Add
-                  </Button>
-                </div>
-                {comments && comments.length > 0 ? (
-                  <div className="space-y-2">
-                    {comments.map((comment) => (
-                      <div key={comment._id} className="rounded-md border border-border p-3">
-                        <div className="mb-1 flex items-center justify-between">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            {comment.authorDisplayName} •{" "}
-                            {new Date(comment.createdAt).toLocaleString()}
-                          </p>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void onResolveComment(comment._id, comment.status === "resolved")}
-                          >
-                            {comment.status === "resolved" ? "Reopen" : "Resolve"}
-                          </Button>
-                        </div>
-                        <p className="text-sm text-card-foreground">{comment.content}</p>
-                        {comment.mentionEmails.length > 0 ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Mentions: {comment.mentionEmails.join(", ")}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No comments yet.</p>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <h3 className="mb-3 text-sm font-semibold text-card-foreground">Version history</h3>
-                {revisions.length > 0 ? (
-                  <div className="space-y-2">
-                    {revisions.map((revision) => (
-                      <div key={revision._id} className="flex items-center justify-between rounded-md border border-border p-3">
-                        <div>
-                          <p className="text-sm font-medium text-card-foreground">
-                            {new Date(revision.createdAt).toLocaleString()}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {revision.reason ?? "autosave snapshot"}
-                          </p>
-                        </div>
-                        {canEdit ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={isRestoringRevisionId === revision._id}
-                            onClick={() => void onRestoreRevision(revision._id)}
-                          >
-                            Restore
-                          </Button>
-                        ) : null}
-                      </div>
-                    ))}
-                    {revisionsStatus === "CanLoadMore" ? (
-                      <Button variant="ghost" size="sm" onClick={() => loadMoreRevisions(8)}>
-                        Load more revisions
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No revisions yet.</p>
-                )}
-              </div>
-            </div>
-            </>
+            <NoteEditorSurface
+              title={title}
+              content={content}
+              onTitleChange={(value) => {
+                setTitleInput(value);
+                setTitleDirty(true);
+                setSaveStatus("typing");
+                markTyping();
+              }}
+              onContentChange={(value, selectionStart) => {
+                setContentInput(value);
+                setContentDirty(true);
+                setSaveStatus("typing");
+                setCursorPosition(selectionStart);
+                markTyping();
+              }}
+              onBlur={() => {
+                if (canEditThisNote) {
+                  setIsTyping(false);
+                  flushSaveNow();
+                }
+              }}
+              onCursorPositionChange={(position) => setCursorPosition(position)}
+              canEditThisNote={canEditThisNote}
+              isArchived={note.isArchived}
+              typingLabel={typingLabel}
+              effectiveLastSavedAt={effectiveLastSavedAt}
+              hasUnsavedChanges={hasUnsavedChanges}
+              saveStatus={saveStatus}
+              onRetrySave={flushSaveNow}
+            />
           ) : null}
         </div>
       </main>
+
+      <CommentsDrawer
+        open={drawer === "comments"}
+        onOpenChange={(open) => setDrawer(open ? "comments" : null)}
+        comments={comments ?? undefined}
+        canComment={Boolean(session)}
+        commentDraft={commentDraft}
+        onCommentDraftChange={setCommentDraft}
+        isSubmitting={isSubmittingComment}
+        onSubmit={() => void onCreateComment()}
+        onToggleResolve={(commentId, resolved) => void onResolveComment(commentId, resolved)}
+      />
+
+      <RevisionsDrawer
+        open={drawer === "revisions"}
+        onOpenChange={(open) => setDrawer(open ? "revisions" : null)}
+        revisions={revisions}
+        status={revisionsStatus}
+        onLoadMore={() => loadMoreRevisions(8)}
+        canRestore={canEdit}
+        isRestoringRevisionId={isRestoringRevisionId}
+        onRestore={(id) => void onRestoreRevision(id)}
+      />
     </div>
   );
 }

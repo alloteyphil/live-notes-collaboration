@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
@@ -10,32 +10,19 @@ import { useClerk, useUser } from "@clerk/nextjs";
 import { ContentCard } from "@/components/content-card";
 import { EmptyState } from "@/components/empty-state";
 import { NavHeader } from "@/components/nav-header";
-import { PageHeader } from "@/components/page-header";
-import { RoleBadge } from "@/components/role-badge";
 import { StatusBanner } from "@/components/status-banner";
 import { useToast } from "@/components/toast-provider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import {
-  Archive,
-  Check,
-  ChevronRight,
-  Clock,
-  FileText,
-  Loader2,
-  Mail,
-  Paintbrush,
-  Plus,
-  Send,
-  Trash2,
-  Undo2,
-  UserPlus,
-  X,
-} from "lucide-react";
+  WorkspaceNotesSidebar,
+  type WorkspaceNotesSidebarHandle,
+} from "@/components/workspace/workspace-notes-sidebar";
+import { WorkspaceHero } from "@/components/workspace/workspace-hero";
+import { OverviewPanel } from "@/components/workspace/overview-panel";
+import { MembersPanel } from "@/components/workspace/members-panel";
+import { InvitesSubPanel } from "@/components/workspace/invites-sub-panel";
 
 const getInviteErrorMessage = (error: unknown) => {
   if (!(error instanceof Error)) return "Failed to send invite.";
@@ -47,6 +34,8 @@ const getInviteErrorMessage = (error: unknown) => {
   }
   return error.message;
 };
+
+type WorkspaceTab = "overview" | "members" | "invites";
 
 export default function WorkspaceDetailPage() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -63,7 +52,9 @@ export default function WorkspaceDetailPage() {
   const workspaceId = params.id as Id<"workspaces">;
   const [includeArchived, setIncludeArchived] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const sidebarRef = useRef<WorkspaceNotesSidebarHandle | null>(null);
 
   const workspace = useQuery(api.workspaces.getById, canRunProtectedQueries ? { workspaceId } : "skip");
   const {
@@ -133,24 +124,20 @@ export default function WorkspaceDetailPage() {
     }
   };
 
-  const onCreateFromTemplate = async () => {
-    if (!selectedTemplateId) {
-      return;
-    }
+  const onUseTemplate = async (templateId: string) => {
     setIsCreating(true);
     setFeedback("");
     try {
-      const isDefaultTemplate = selectedTemplateId.startsWith("default:");
+      const isDefaultTemplate = templateId.startsWith("default:");
       await createFromTemplate({
         workspaceId,
         templateId: isDefaultTemplate
           ? undefined
-          : (selectedTemplateId as Id<"noteTemplates">),
+          : (templateId as Id<"noteTemplates">),
         defaultTemplateTitle: isDefaultTemplate
-          ? selectedTemplateId.replace("default:", "")
+          ? templateId.replace("default:", "")
           : undefined,
       });
-      setSelectedTemplateId("");
       setFeedback("Note created from template.");
       showToast({ message: "Note created from template.", variant: "success" });
     } catch (error) {
@@ -259,6 +246,15 @@ export default function WorkspaceDetailPage() {
     }
   };
 
+  const focusSidebarCreate = () => {
+    sidebarRef.current?.focusCreateInput();
+  };
+
+  const canManageNotes =
+    memberState !== null && memberState !== undefined && memberState.currentUserRole !== "viewer";
+  const canCreate = canManageNotes;
+  const pendingInvitesCount = memberState?.pendingInvites.length ?? 0;
+
   return (
     <div className="min-h-screen bg-background">
       <NavHeader
@@ -270,440 +266,199 @@ export default function WorkspaceDetailPage() {
         }}
       />
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="space-y-8">
-          <PageHeader
-            title={workspace?.name ?? "Workspace"}
-            description="Create notes, manage members, and handle invites."
-            backHref="/dashboard"
-            backLabel="Dashboard"
-            actions={
-              memberState ? <RoleBadge role={memberState.currentUserRole} /> : null
-            }
-          />
-
-          {isPending || memberState === undefined ? (
-            <div className="space-y-3">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-96 w-full" />
-            </div>
-          ) : null}
-
-          {!session && !sessionPending ? (
-            <ContentCard>
-              <EmptyState
-                title="Sign in required"
-                description="Authentication is required before workspace data is available."
-                action={
-                  <Button asChild>
-                    <Link href="/sign-in">Go to sign in</Link>
-                  </Button>
-                }
-              />
-            </ContentCard>
-          ) : null}
-
-          {memberState === null ? (
-            <ContentCard>
-              <EmptyState
-                title="Access removed"
-                description="You no longer have permission to open this workspace."
-                action={
-                  <Button asChild variant="outline">
-                    <Link href="/dashboard">Back to Dashboard</Link>
-                  </Button>
-                }
-              />
-            </ContentCard>
-          ) : null}
-
-          {memberFeedback ? (
-            <StatusBanner
-              variant={memberFeedback.includes("updated") || memberFeedback.includes("removed") ? "success" : "error"}
-              message={memberFeedback}
-              onDismiss={() => setMemberFeedback("")}
-            />
-          ) : null}
-          {inviteFeedback ? (
-            <StatusBanner
-              variant={
-                inviteFeedback.includes("sent") || inviteFeedback.includes("revoked")
-                  ? "success"
-                  : inviteFeedback.includes("required") || inviteFeedback.includes("pending")
-                    ? "warning"
-                    : "error"
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+        {!session && !sessionPending ? (
+          <ContentCard>
+            <EmptyState
+              title="Sign in required"
+              description="Authentication is required before workspace data is available."
+              action={
+                <Button asChild>
+                  <Link href="/sign-in">Go to sign in</Link>
+                </Button>
               }
-              message={inviteFeedback}
-              onDismiss={() => setInviteFeedback("")}
             />
-          ) : null}
+          </ContentCard>
+        ) : memberState === null ? (
+          <ContentCard>
+            <EmptyState
+              title="Access removed"
+              description="You no longer have permission to open this workspace."
+              action={
+                <Button asChild variant="outline">
+                  <Link href="/dashboard">Back to Dashboard</Link>
+                </Button>
+              }
+            />
+          </ContentCard>
+        ) : memberState === undefined || isPending ? (
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-96 w-full rounded-xl" />
+          </div>
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <WorkspaceNotesSidebar
+              ref={sidebarRef}
+              notes={notes}
+              status={notesPaginationStatus}
+              includeArchived={includeArchived}
+              onToggleArchived={setIncludeArchived}
+              search={noteSearch}
+              onSearchChange={setNoteSearch}
+              searchResults={searchNotes ?? undefined}
+              noteTitle={noteTitle}
+              onNoteTitleChange={setNoteTitle}
+              onCreate={onCreateNote}
+              isCreating={isCreating}
+              canCreate={canCreate}
+              canManage={canManageNotes}
+              onToggleArchive={onToggleArchive}
+              onDelete={onDeleteNote}
+              onLoadMore={() => loadMoreNotes(20)}
+              mobileOpen={mobileSidebarOpen}
+              onMobileOpenChange={setMobileSidebarOpen}
+            />
 
-          {memberState ? (
-            <div className="grid gap-8 lg:grid-cols-2">
-              <div className="space-y-8">
-                <ContentCard title="Whiteboard" description="Sketch ideas together in real-time">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent">
-                        <Paintbrush className="h-6 w-6 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-card-foreground">Collaborative Canvas</p>
-                        <p className="text-sm text-muted-foreground">
-                          {memberState.currentUserRole === "viewer" ? "View only" : "Edit together"}
-                        </p>
-                      </div>
-                    </div>
-                    <Button asChild>
-                      <Link href={`/workspace/${workspaceId}/whiteboard`}>
-                        Open
-                        <ChevronRight className="ml-1 h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </ContentCard>
+            <section className="min-w-0 space-y-6">
+              <WorkspaceHero
+                name={workspace?.name ?? "Workspace"}
+                role={memberState.currentUserRole}
+                notesCount={notes.length}
+                membersCount={memberState.members.length}
+                pendingInvitesCount={pendingInvitesCount}
+                whiteboardHref={`/workspace/${workspaceId}/whiteboard`}
+                onOpenNotesSidebar={() => setMobileSidebarOpen(true)}
+                onNewNote={focusSidebarCreate}
+                canCreateNote={canCreate}
+              />
 
-                <ContentCard
-                  title="Notes"
-                  description={`${notes.length} note${notes.length !== 1 ? "s" : ""} in this workspace`}
-                  action={
-                    <div className="flex items-center gap-2">
-                      <Input
-                        placeholder="Search notes..."
-                        value={noteSearch}
-                        onChange={(event) => setNoteSearch(event.target.value)}
-                        className="h-8 w-48"
-                      />
-                      <Button
-                        variant={includeArchived ? "secondary" : "outline"}
-                        size="sm"
-                        onClick={() => setIncludeArchived((value) => !value)}
-                      >
-                        {includeArchived ? "Hide archived" : "Show archived"}
-                      </Button>
-                    </div>
+              <TabsBar active={activeTab} onChange={setActiveTab} pendingInvitesCount={pendingInvitesCount} />
+
+              {activeTab === "overview" && feedback ? (
+                <StatusBanner
+                  variant={feedback.toLowerCase().includes("created") ? "success" : "error"}
+                  message={feedback}
+                  onDismiss={() => setFeedback("")}
+                />
+              ) : null}
+              {activeTab === "members" && memberFeedback ? (
+                <StatusBanner
+                  variant={
+                    memberFeedback.includes("updated") || memberFeedback.includes("removed")
+                      ? "success"
+                      : "error"
                   }
-                  contentClassName="p-0"
-                >
-                  <form onSubmit={onCreateNote} className="flex gap-3 border-b border-border p-4">
-                    <Input
-                      id="new-note-title"
-                      placeholder="Note title"
-                      value={noteTitle}
-                      onChange={(event) => setNoteTitle(event.target.value)}
-                      disabled={memberState.currentUserRole === "viewer" || isCreating}
-                      className="flex-1"
-                    />
-                    <Button
-                      type="submit"
-                      disabled={
-                        memberState.currentUserRole === "viewer" || isCreating || !noteTitle.trim()
-                      }
-                    >
-                      {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create"}
-                    </Button>
-                  </form>
-                  {memberState.currentUserRole !== "viewer" ? (
-                    <div className="flex items-center gap-3 border-b border-border p-4">
-                      <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                        <SelectTrigger className="w-72">
-                          <SelectValue placeholder="Create from template..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(templates ?? []).map((template) => (
-                            <SelectItem key={template._id} value={template._id}>
-                              {template.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void onCreateFromTemplate()}
-                        disabled={!selectedTemplateId || isCreating}
-                      >
-                        Use template
-                      </Button>
-                    </div>
-                  ) : null}
-                  {noteSearch.trim() ? (
-                    <div className="border-b border-border p-4">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Search results
-                      </p>
-                      {searchNotes && searchNotes.length > 0 ? (
-                        <div className="space-y-2">
-                          {searchNotes.map((result) => (
-                            <Link
-                              key={result._id}
-                              href={`/note/${result._id}`}
-                              className="block rounded-md border border-border px-3 py-2 hover:bg-accent/40"
-                            >
-                              <p className="text-sm font-medium text-card-foreground">{result.title}</p>
-                              <p className="text-xs text-muted-foreground">{result.snippet || "No preview available"}</p>
-                            </Link>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No notes found.</p>
-                      )}
-                    </div>
-                  ) : null}
-                  {notesPaginationStatus === "LoadingFirstPage" ? (
-                    <div className="space-y-2 p-4">
-                      <Skeleton className="h-12 w-full" />
-                      <Skeleton className="h-12 w-full" />
-                      <Skeleton className="h-12 w-full" />
-                    </div>
-                  ) : notes.length === 0 ? (
-                    <div className="p-6">
-                      <EmptyState
-                        icon={FileText}
-                        title="No notes yet"
-                        description="Create your first note to start documenting."
-                        action={
-                          memberState.currentUserRole !== "viewer" ? (
-                            <Button onClick={() => document.getElementById("new-note-title")?.focus()}>
-                              <Plus className="mr-2 h-4 w-4" />
-                              Create Note
-                            </Button>
-                          ) : null
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border">
-                      {notes.map((note) => (
-                        <div key={note._id} className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-accent/50">
-                          <Link
-                            href={`/note/${note._id}`}
-                            className="flex min-w-0 flex-1 items-center gap-4"
-                          >
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                              <FileText className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <h4 className="truncate font-medium text-card-foreground">
-                                {note.title}
-                              </h4>
-                              <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                Updated {new Date(note.updatedAt).toLocaleString()}
-                                {note.isArchived ? " • Archived" : ""}
-                              </p>
-                            </div>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                          </Link>
-                          {memberState.currentUserRole !== "viewer" ? (
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                onClick={() => void onToggleArchive(note._id, note.isArchived)}
-                                title={note.isArchived ? "Unarchive note" : "Archive note"}
-                              >
-                                {note.isArchived ? (
-                                  <Undo2 className="h-4 w-4" />
-                                ) : (
-                                  <Archive className="h-4 w-4" />
-                                )}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                onClick={() => void onDeleteNote(note._id)}
-                                title="Delete note"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {notesPaginationStatus === "CanLoadMore" ? (
-                    <div className="border-t border-border px-6 py-4">
-                      <Button variant="outline" size="sm" onClick={() => loadMoreNotes(20)}>
-                        Load more
-                      </Button>
-                    </div>
-                  ) : null}
-                </ContentCard>
-                {feedback ? (
-                  <StatusBanner
-                    variant={feedback.includes("created") ? "success" : "error"}
-                    message={feedback}
-                    onDismiss={() => setFeedback("")}
-                  />
-                ) : null}
-              </div>
+                  message={memberFeedback}
+                  onDismiss={() => setMemberFeedback("")}
+                />
+              ) : null}
+              {(activeTab === "members" || activeTab === "invites") && inviteFeedback ? (
+                <StatusBanner
+                  variant={
+                    inviteFeedback.includes("sent") || inviteFeedback.includes("revoked")
+                      ? "success"
+                      : inviteFeedback.includes("required") || inviteFeedback.includes("pending")
+                        ? "warning"
+                        : "error"
+                  }
+                  message={inviteFeedback}
+                  onDismiss={() => setInviteFeedback("")}
+                />
+              ) : null}
 
-              <div className="space-y-8">
-                <ContentCard
-                  title="Members"
-                  description={`${memberState.members.length} member${memberState.members.length !== 1 ? "s" : ""}`}
-                  contentClassName="space-y-6"
-                >
-                  <div className="space-y-3">
-                    {memberState.members.map((member) => (
-                      <div key={member._id} className="flex items-center gap-3 rounded-lg border border-border p-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                          {member.displayName.charAt(0)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-card-foreground">{member.displayName}</p>
-                          <p className="truncate text-xs text-muted-foreground">{member.userEmail ?? "No email available"}</p>
-                        </div>
-                        {memberState.currentUserRole === "owner" && member.role !== "owner" ? (
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={member.role}
-                              onValueChange={(value) =>
-                                void onUpdateMemberRole(member.tokenIdentifier, value as "editor" | "viewer")
-                              }
-                              disabled={updatingMemberToken === member.tokenIdentifier}
-                            >
-                              <SelectTrigger className="h-8 w-24">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="editor">Editor</SelectItem>
-                                <SelectItem value="viewer">Viewer</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => void onRemoveMember(member.tokenIdentifier)}
-                              disabled={updatingMemberToken === member.tokenIdentifier}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <RoleBadge role={member.role} />
-                        )}
-                      </div>
-                    ))}
-                  </div>
+              {activeTab === "overview" ? (
+                <OverviewPanel
+                  notes={notes}
+                  canUseTemplates={canManageNotes}
+                  templates={templates ?? undefined}
+                  onUseTemplate={onUseTemplate}
+                  isCreating={isCreating}
+                  whiteboardHref={`/workspace/${workspaceId}/whiteboard`}
+                  onSeeAllNotes={() => setMobileSidebarOpen(true)}
+                  onFocusCreate={focusSidebarCreate}
+                  canCreateNote={canCreate}
+                />
+              ) : null}
 
-                  {memberState.currentUserRole === "owner" ? (
-                    <>
-                      <Separator />
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <UserPlus className="h-4 w-4 text-muted-foreground" />
-                          <Label className="text-sm font-medium">Invite new member</Label>
-                        </div>
-                        <form onSubmit={onInviteMember} className="space-y-3">
-                          <div className="flex gap-2">
-                            <div className="relative flex-1">
-                              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                              <Input
-                                type="email"
-                                placeholder="Email address"
-                                value={inviteEmail}
-                                onChange={(event) => setInviteEmail(event.target.value)}
-                                disabled={isInviting}
-                                className="pl-9"
-                              />
-                            </div>
-                            <Select
-                              value={inviteRole}
-                              onValueChange={(value) => setInviteRole(value as "editor" | "viewer")}
-                              disabled={isInviting}
-                            >
-                              <SelectTrigger className="w-28">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="editor">Editor</SelectItem>
-                                <SelectItem value="viewer">Viewer</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="w-full">
-                            {isInviting ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Sending...
-                              </>
-                            ) : (
-                              <>
-                                <Send className="mr-2 h-4 w-4" />
-                                Send Invite
-                              </>
-                            )}
-                          </Button>
-                        </form>
-                      </div>
-                    </>
-                  ) : null}
+              {activeTab === "members" ? (
+                <MembersPanel
+                  members={memberState.members}
+                  currentUserRole={memberState.currentUserRole}
+                  updatingMemberToken={updatingMemberToken}
+                  onUpdateMemberRole={onUpdateMemberRole}
+                  onRemoveMember={onRemoveMember}
+                  inviteEmail={inviteEmail}
+                  onInviteEmailChange={setInviteEmail}
+                  inviteRole={inviteRole}
+                  onInviteRoleChange={setInviteRole}
+                  onInvite={onInviteMember}
+                  isInviting={isInviting}
+                />
+              ) : null}
 
-                  <Separator />
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-muted-foreground">Pending Invites</Label>
-                    {memberState.pendingInvites.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No pending invites.</p>
-                    ) : (
-                      memberState.pendingInvites.map((invite) => (
-                        <div
-                          key={invite._id}
-                          className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-3"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-card-foreground">{invite.invitedEmail}</p>
-                          </div>
-                          <RoleBadge role={invite.role} showIcon={false} />
-                          {memberState.currentUserRole === "owner" ? (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => void onRevokeInvite(invite._id)}
-                              disabled={updatingInviteId === invite._id}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          ) : null}
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <Separator />
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium text-muted-foreground">Invite History</Label>
-                    {memberState.acceptedInvites.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No accepted invites yet.</p>
-                    ) : (
-                      memberState.acceptedInvites.map((invite) => (
-                        <div key={invite._id} className="flex items-center gap-3 rounded-lg border border-border p-3 opacity-60">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success/10">
-                            <Check className="h-4 w-4 text-success" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-card-foreground">{invite.invitedEmail}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Accepted by {invite.acceptedByDisplayName ?? "Unknown member"}
-                            </p>
-                          </div>
-                          <span className="text-xs font-medium text-success">Joined</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </ContentCard>
-              </div>
-            </div>
-          ) : null}
-        </div>
+              {activeTab === "invites" ? (
+                <InvitesSubPanel
+                  pendingInvites={memberState.pendingInvites}
+                  acceptedInvites={memberState.acceptedInvites}
+                  currentUserRole={memberState.currentUserRole}
+                  updatingInviteId={updatingInviteId}
+                  onRevoke={onRevokeInvite}
+                />
+              ) : null}
+            </section>
+          </div>
+        )}
       </main>
+    </div>
+  );
+}
+
+interface TabsBarProps {
+  active: WorkspaceTab;
+  onChange: (tab: WorkspaceTab) => void;
+  pendingInvitesCount: number;
+}
+
+function TabsBar({ active, onChange, pendingInvitesCount }: TabsBarProps) {
+  const tabs: Array<{ id: WorkspaceTab; label: string; count?: number }> = [
+    { id: "overview", label: "Overview" },
+    { id: "members", label: "Members" },
+    { id: "invites", label: "Invites", count: pendingInvitesCount },
+  ];
+
+  return (
+    <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-sm">
+      {tabs.map((tab) => {
+        const isActive = tab.id === active;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              isActive
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            {tab.label}
+            {tab.count && tab.count > 0 ? (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-xs font-semibold",
+                  isActive
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {tab.count}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 }
