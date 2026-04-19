@@ -86,6 +86,11 @@
   --sidebar-ring: oklch(0.65 0.15 175);
 }
 
+/* UI preference: slightly smaller radius in compact density (after .dark tokens) */
+html[data-ui-density="compact"] {
+  --radius: 0.375rem;
+}
+
 @theme inline {
   --font-sans: "Inter", "Inter Fallback", system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", monospace;
@@ -140,6 +145,29 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* UI preferences: compact density */
+  html[data-ui-density="compact"] body {
+    @apply leading-snug;
+  }
+
+  html[data-ui-density="compact"] .rounded-xl.border.border-border.bg-card > .border-b {
+    @apply px-3 py-3 sm:px-4 sm:py-3;
+  }
+
+  html[data-ui-density="compact"] .rounded-xl.border.border-border.bg-card > div:not(.border-b) {
+    @apply p-3 sm:p-4;
+  }
+
+  /* UI preferences: reduced motion */
+  html.motion-reduce *,
+  html.motion-reduce *::before,
+  html.motion-reduce *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

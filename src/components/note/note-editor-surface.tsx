@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useState } from "react";
+import { forwardRef, useEffect, useState, type Ref } from "react";
 import ReactMarkdown from "react-markdown";
 import { Clock, Eye, Lock, Pencil, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,10 @@ interface NoteEditorSurfaceProps {
   hasUnsavedChanges: boolean;
   saveStatus: "idle" | "typing" | "saving" | "saved" | "error";
   onRetrySave: () => void;
+  /** Ref for the title input (e.g. jump-to-match from search). */
+  titleInputRef?: Ref<HTMLInputElement>;
+  /** When this number changes, switches body tab to Write so the textarea can be focused. */
+  forceWriteTabToken?: number;
 }
 
 export const NoteEditorSurface = forwardRef<HTMLTextAreaElement, NoteEditorSurfaceProps>(
@@ -40,12 +44,21 @@ export const NoteEditorSurface = forwardRef<HTMLTextAreaElement, NoteEditorSurfa
       hasUnsavedChanges,
       saveStatus,
       onRetrySave,
+      titleInputRef,
+      forceWriteTabToken = 0,
     },
     ref,
   ) => {
     const [bodyTab, setBodyTab] = useState<"write" | "preview">("write");
     const wordCount = content.split(/\s+/).filter(Boolean).length;
     const charCount = content.length;
+
+    useEffect(() => {
+      if (forceWriteTabToken <= 0) return;
+      queueMicrotask(() => {
+        setBodyTab("write");
+      });
+    }, [forceWriteTabToken]);
 
     return (
       <div className="rounded-xl border border-border bg-card shadow-sm">
@@ -62,6 +75,7 @@ export const NoteEditorSurface = forwardRef<HTMLTextAreaElement, NoteEditorSurfa
 
         <div className="space-y-3 px-4 pt-6 pb-4 sm:px-8 sm:pt-8">
           <Input
+            ref={titleInputRef}
             value={title}
             onChange={(event) => {
               if (!canEditThisNote) return;

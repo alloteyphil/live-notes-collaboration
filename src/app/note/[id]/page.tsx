@@ -1,12 +1,13 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useConvexAuth, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { api } from "../../../../convex/_generated/api";
 import { NavHeader } from "@/components/nav-header";
 import { StatusBanner } from "@/components/status-banner";
+import { Button } from "@/components/ui/button";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { useToast } from "@/components/toast-provider";
 import { NoteToolbar } from "@/components/note/note-toolbar";
@@ -27,6 +28,32 @@ function buildTypingLabel(displayNames: string[]): string {
   return `${displayNames[0]} and ${displayNames.length - 1} others are typing...`;
 }
 
+type EditorFindMatch = { field: "title" | "content"; start: number; end: number };
+
+function collectEditorFindMatches(titleText: string, body: string, rawQuery: string): EditorFindMatch[] {
+  const needle = rawQuery.trim();
+  if (!needle) return [];
+  const lowerTitle = titleText.toLowerCase();
+  const lowerBody = body.toLowerCase();
+  const n = needle.toLowerCase();
+  const out: EditorFindMatch[] = [];
+  let pos = 0;
+  while (pos < lowerTitle.length) {
+    const i = lowerTitle.indexOf(n, pos);
+    if (i === -1) break;
+    out.push({ field: "title", start: i, end: i + needle.length });
+    pos = i + Math.max(1, n.length);
+  }
+  pos = 0;
+  while (pos < lowerBody.length) {
+    const i = lowerBody.indexOf(n, pos);
+    if (i === -1) break;
+    out.push({ field: "content", start: i, end: i + needle.length });
+    pos = i + Math.max(1, n.length);
+  }
+  return out;
+}
+
 function NoteEditorPageInner() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { signOut } = useClerk();
@@ -40,9 +67,13 @@ function NoteEditorPageInner() {
   const canRunProtectedQueries = Boolean(session) && isConvexAuthenticated;
   const sessionPending = isPending || (Boolean(session) && isConvexAuthLoading);
   const { showToast } = useToast();
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const noteId = params.id as Id<"notes">;
+  const findQueryRaw = searchParams.get("q");
+  const findQuery =
+    findQueryRaw && findQueryRaw.trim().length > 0 ? findQueryRaw.trim() : null;
   const highlightCommentIdParam = searchParams.get("comment");
   const highlightCommentId =
     highlightCommentIdParam && highlightCommentIdParam.length > 0
@@ -96,8 +127,20 @@ function NoteEditorPageInner() {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isRestoringRevisionId, setIsRestoringRevisionId] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<Drawer>(null);
+  const [findMatchIndex, setFindMatchIndex] = useState(0);
+  const [findFocusBoot, setFindFocusBoot] = useState(0);
+  const [forceWriteTabToken, setForceWriteTabToken] = useState(0);
+  const [remoteFork, setRemoteFork] = useState<{
+    updatedAt: number;
+    title: string;
+    content: string;
+  } | null>(null);
 
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const lastSyncedRef = useRef({ title: "", content: "" });
+  const lastSyncedUpdatedAtRef = useRef(0);
+  const dismissedRemoteForkAtRef = useRef<number | null>(null);
   const previousCanEditRef = useRef<boolean | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +155,22 @@ function NoteEditorPageInner() {
   const canEditThisNote = canEdit && !(note?.isArchived ?? false);
   const hasUnsavedChanges = titleDirty || contentDirty;
   const effectiveLastSavedAt = lastSavedAt ?? note?.updatedAt ?? null;
+
+  const findMatches = useMemo(
+    () => (findQuery ? collectEditorFindMatches(title, content, findQuery) : []),
+    [findQuery, title, content],
+  );
+
+  const clearFindQuery = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("q");
+    const qs = next.toString();
+    router.replace(qs ? `/note/${noteId}?${qs}` : `/note/${noteId}`);
+  }, [router, searchParams, noteId]);
+
+  useEffect(() => {
+    setFindFocusBoot((value) => value + 1);
+  }, [findQuery, noteId]);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -190,8 +249,10 @@ function NoteEditorPageInner() {
       queueMicrotask(() => {
         setTitleInput(note.title);
         setContentInput(note.content);
+        setFindFocusBoot((boot) => boot + 1);
       });
       lastSyncedRef.current = { title: note.title, content: note.content };
+      lastSyncedUpdatedAtRef.current = note.updatedAt;
       return;
     }
     if (!titleDirty && !contentDirty) {
@@ -203,9 +264,73 @@ function NoteEditorPageInner() {
           setContentInput(note.content);
         });
         lastSyncedRef.current = { title: note.title, content: note.content };
+        lastSyncedUpdatedAtRef.current = note.updatedAt;
       }
     }
   }, [contentDirty, note, titleDirty]);
+
+  useEffect(() => {
+    if (!note || titleDirty || contentDirty) return;
+    lastSyncedUpdatedAtRef.current = note.updatedAt;
+  }, [note, titleDirty, contentDirty]);
+
+  useEffect(() => {
+    if (!note || (!titleDirty && !contentDirty)) return;
+    const serverDrift =
+      note.title !== lastSyncedRef.current.title || note.content !== lastSyncedRef.current.content;
+    if (!serverDrift) return;
+    if (note.updatedAt <= lastSyncedUpdatedAtRef.current) return;
+    if (dismissedRemoteForkAtRef.current === note.updatedAt) return;
+    setRemoteFork((prev) => {
+      if (prev?.updatedAt === note.updatedAt) return prev;
+      return { updatedAt: note.updatedAt, title: note.title, content: note.content };
+    });
+  }, [note, titleDirty, contentDirty]);
+
+  useEffect(() => {
+    if (findMatches.length === 0) {
+      setFindMatchIndex(0);
+      return;
+    }
+    setFindMatchIndex((index) => Math.min(index, findMatches.length - 1));
+  }, [findMatches.length]);
+
+  const titleLiveRef = useRef(title);
+  const contentLiveRef = useRef(content);
+  titleLiveRef.current = title;
+  contentLiveRef.current = content;
+
+  useEffect(() => {
+    if (!findQuery) return;
+    const matches = collectEditorFindMatches(
+      titleLiveRef.current,
+      contentLiveRef.current,
+      findQuery,
+    );
+    if (matches.length === 0) return;
+    const safeIndex = Math.min(findMatchIndex, matches.length - 1);
+    const match = matches[safeIndex];
+    if (!match) return;
+    if (match.field === "content") {
+      setForceWriteTabToken((token) => token + 1);
+    }
+    const timeoutId = window.setTimeout(() => {
+      if (match.field === "content") {
+        const el = contentTextareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(match.start, match.end);
+        }
+      } else {
+        const el = titleInputRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(match.start, match.end);
+        }
+      }
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [findQuery, findMatchIndex, noteId, findFocusBoot]);
 
   useEffect(() => {
     if (!note) return;
@@ -485,6 +610,107 @@ function NoteEditorPageInner() {
           {saveStatus === "error" ? (
             <StatusBanner variant="error" title="Unable to save" message={feedback || "Save failed"} />
           ) : null}
+          {remoteFork && note ? (
+            <StatusBanner
+              variant="warning"
+              title="This note was updated elsewhere"
+              message="Someone saved a newer version while you have unsaved edits. Reload to replace your draft with their version, or dismiss to keep editing (your save may overwrite their changes)."
+              actions={
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setTitleInput(remoteFork.title);
+                      setContentInput(remoteFork.content);
+                      lastSyncedRef.current = {
+                        title: remoteFork.title,
+                        content: remoteFork.content,
+                      };
+                      lastSyncedUpdatedAtRef.current = remoteFork.updatedAt;
+                      setTitleDirty(false);
+                      setContentDirty(false);
+                      setRemoteFork(null);
+                      dismissedRemoteForkAtRef.current = null;
+                      setSaveStatus("idle");
+                      setFeedback("Loaded the latest version from the server.");
+                    }}
+                  >
+                    Reload latest
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      dismissedRemoteForkAtRef.current = remoteFork.updatedAt;
+                      setRemoteFork(null);
+                    }}
+                  >
+                    Dismiss
+                  </Button>
+                </>
+              }
+              onDismiss={() => {
+                dismissedRemoteForkAtRef.current = remoteFork.updatedAt;
+                setRemoteFork(null);
+              }}
+            />
+          ) : null}
+          {findQuery && note ? (
+            findMatches.length === 0 ? (
+              <StatusBanner
+                variant="muted"
+                title="No matches in this note"
+                message={`Nothing in the title or body matches "${findQuery}".`}
+                actions={
+                  <Button type="button" size="sm" variant="outline" onClick={clearFindQuery}>
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : (
+              <StatusBanner
+                variant="info"
+                title="Search in note"
+                message={`Match ${findMatchIndex + 1} of ${findMatches.length} for "${findQuery}".`}
+                actions={
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setFindMatchIndex((index) =>
+                          findMatches.length === 0
+                            ? 0
+                            : (index - 1 + findMatches.length) % findMatches.length,
+                        )
+                      }
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setFindMatchIndex((index) =>
+                          findMatches.length === 0 ? 0 : (index + 1) % findMatches.length,
+                        )
+                      }
+                    >
+                      Next
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={clearFindQuery}>
+                      Clear
+                    </Button>
+                  </>
+                }
+              />
+            )
+          ) : null}
         </div>
 
         <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 lg:py-10">
@@ -494,6 +720,9 @@ function NoteEditorPageInner() {
             </div>
           ) : note ? (
             <NoteEditorSurface
+              ref={contentTextareaRef}
+              titleInputRef={titleInputRef}
+              forceWriteTabToken={forceWriteTabToken}
               title={title}
               content={content}
               onTitleChange={(value) => {

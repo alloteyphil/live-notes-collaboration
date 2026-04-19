@@ -16,6 +16,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { NoteRow } from "@/components/workspace/note-row";
 import { cn } from "@/lib/utils";
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function HighlightedSearchText({ text, term }: { text: string; term: string }) {
+  const trimmed = term.trim();
+  if (!trimmed) {
+    return <>{text}</>;
+  }
+  const parts = text.split(new RegExp(`(${escapeRegExp(trimmed)})`, "gi"));
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.toLowerCase() === trimmed.toLowerCase() ? (
+          <mark key={index} className="rounded-sm bg-warning/35 px-0.5 text-foreground">
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 type NoteDoc = Doc<"notes">;
 
 type SearchResult = {
@@ -359,7 +384,7 @@ function SearchResultsList({ results, searchTerm, onNavigate }: SearchResultsLis
       {results.map((result) => (
         <li key={result._id}>
           <Link
-            href={`/note/${result._id}`}
+            href={`/note/${result._id}?q=${encodeURIComponent(searchTerm)}`}
             onClick={onNavigate}
             className="group flex items-start gap-2 rounded-md px-2 py-2 transition-colors hover:bg-accent"
           >
@@ -368,10 +393,12 @@ function SearchResultsList({ results, searchTerm, onNavigate }: SearchResultsLis
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-card-foreground">
-                {result.title || "Untitled note"}
+                <HighlightedSearchText text={result.title || "Untitled note"} term={searchTerm} />
               </p>
               {result.snippet ? (
-                <p className="line-clamp-2 text-xs text-muted-foreground">{result.snippet}</p>
+                <p className="line-clamp-2 text-xs text-muted-foreground">
+                  <HighlightedSearchText text={result.snippet} term={searchTerm} />
+                </p>
               ) : null}
             </div>
           </Link>

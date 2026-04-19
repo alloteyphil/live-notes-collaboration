@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileText, LayoutDashboard, LogOut } from "lucide-react";
+import { ChevronDown, FileText, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +26,7 @@ export function NavHeader({
   onSignOut,
 }: NavHeaderProps) {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 font-semibold text-foreground">
@@ -40,17 +40,30 @@ export function NavHeader({
               <Link href="/">Home</Link>
             </Button>
             {isSignedIn || sessionPending ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Link href="/dashboard">
-                  <LayoutDashboard className="mr-1.5 h-4 w-4" />
-                  {sessionPending ? "Loading..." : "Dashboard"}
-                </Link>
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  asChild
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Link href="/dashboard">
+                    <LayoutDashboard className="mr-1.5 h-4 w-4" />
+                    {sessionPending ? "Loading..." : "Dashboard"}
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  asChild
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Link href="/settings">
+                    <Settings className="mr-1.5 h-4 w-4" />
+                    Settings
+                  </Link>
+                </Button>
+              </>
             ) : null}
           </nav>
         </div>
@@ -83,6 +96,12 @@ export function NavHeader({
                   <Link href="/dashboard" className="cursor-pointer">
                     <LayoutDashboard className="mr-2 h-4 w-4" />
                     Dashboard
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

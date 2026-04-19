@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +8,8 @@ interface StatusBannerProps {
   variant?: BannerVariant;
   title?: string;
   message: string;
+  /** Optional buttons or controls (e.g. Prev / Next, Reload). */
+  actions?: ReactNode;
   onDismiss?: () => void;
   className?: string;
 }
@@ -59,6 +62,7 @@ export function StatusBanner({
   variant = "info",
   title,
   message,
+  actions,
   onDismiss,
   className,
 }: StatusBannerProps) {
@@ -74,6 +78,7 @@ export function StatusBanner({
       <div className="min-w-0 flex-1">
         {title ? <p className={cn("font-medium", styles.text)}>{title}</p> : null}
         <p className={cn("text-sm", title ? "mt-1 text-muted-foreground" : styles.text)}>{message}</p>
+        {actions ? <div className="mt-3 flex flex-wrap gap-2">{actions}</div> : null}
       </div>
       {onDismiss ? (
         <button
