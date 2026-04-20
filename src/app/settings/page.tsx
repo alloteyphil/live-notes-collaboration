@@ -97,7 +97,7 @@ export default function SettingsPage() {
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:py-10">
         <PageHeader
           title="Settings"
-          description="Account and appearance for Live Notes."
+          description="Account and appearance for PulseNotes."
           backHref="/dashboard"
           backLabel="Dashboard"
         />
@@ -217,7 +217,7 @@ export default function SettingsPage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    When set to match system, Live Notes follows your device’s reduced-motion
+                    When set to match system, PulseNotes follows your device’s reduced-motion
                     setting.
                   </p>
                 </div>

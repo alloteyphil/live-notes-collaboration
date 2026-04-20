@@ -51,7 +51,7 @@ export default function HomePage() {
                   </h1>
                   <p className="text-pretty text-lg text-muted-foreground">
                     Create workspaces, collaborate in real-time, and keep your team aligned. Live
-                    Notes brings your ideas together with autosave, presence, and powerful
+                    PulseNotes brings your ideas together with autosave, presence, and powerful
                     permissions.
                   </p>
                 </div>
@@ -209,7 +209,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <FileText className="h-4 w-4" />
-              <span>Live Notes</span>
+              <span>PulseNotes</span>
             </div>
             <p className="text-sm text-muted-foreground">Collaborative notes for modern teams.</p>
           </div>

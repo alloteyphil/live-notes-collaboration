@@ -1,4 +1,4 @@
-# Live Collaboration Notes
+# PulseNotes
 
 A portfolio-focused realtime notes app built with:
 

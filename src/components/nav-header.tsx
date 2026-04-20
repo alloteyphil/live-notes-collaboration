@@ -33,7 +33,7 @@ export function NavHeader({
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
               <FileText className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="hidden sm:inline-block">Live Notes</span>
+            <span className="hidden sm:inline-block">PulseNotes</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
             <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground">

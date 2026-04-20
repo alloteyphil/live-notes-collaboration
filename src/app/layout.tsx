@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Live Notes - Collaborative Notes & Workspaces",
+  title: "PulseNotes - Collaborative Notes & Workspaces",
   description:
-    "Real-time collaborative notes with workspaces, presence, and whiteboard. Work together seamlessly.",
+    "Real-time collaborative notes with workspaces, presence, and whiteboard. PulseNotes helps teams work together seamlessly.",
 };
 
 export default function RootLayout({
