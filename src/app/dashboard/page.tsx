@@ -79,7 +79,17 @@ export default function DashboardPage() {
           });
         }
       })
-      .catch(() => {})
+      .catch((error) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not auto-claim pending invites. Try refreshing.";
+        setFeedback(message);
+        showToast({
+          message,
+          variant: "error",
+        });
+      })
       .finally(() => {
         claimInFlightRef.current = false;
       });

@@ -72,6 +72,35 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Run tests
+
+Unit/integration:
+
+```bash
+npm run test
+```
+
+Coverage:
+
+```bash
+npm run test:coverage
+```
+
+E2E smoke (Playwright):
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+Optional authenticated E2E smoke targets:
+
+```bash
+PLAYWRIGHT_SMOKE_WORKSPACE_PATH=/workspace/<id> \
+PLAYWRIGHT_SMOKE_NOTE_PATH=/note/<id> \
+npm run test:e2e
+```
+
 ## Typical flow
 
 1. Click "Create account" on the home page and complete Clerk sign-up.

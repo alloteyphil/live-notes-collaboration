@@ -9,6 +9,7 @@ import { api } from "../../../../convex/_generated/api";
 import { ContentCard } from "@/components/content-card";
 import { Button } from "@/components/ui/button";
 import { RoleBadge } from "@/components/role-badge";
+import { buildJoinAuthHref } from "@/lib/invite-links";
 
 export default function JoinInvitePage() {
   const params = useParams<{ token: string }>();
@@ -26,13 +27,11 @@ export default function JoinInvitePage() {
   const [isClaiming, setIsClaiming] = useState(false);
 
   const signInHref = useMemo(() => {
-    const path = `/join/${encodeURIComponent(token)}`;
-    return `/sign-in?redirect_url=${encodeURIComponent(path)}`;
+    return buildJoinAuthHref("sign-in", token);
   }, [token]);
 
   const signUpHref = useMemo(() => {
-    const path = `/join/${encodeURIComponent(token)}`;
-    return `/sign-up?redirect_url=${encodeURIComponent(path)}`;
+    return buildJoinAuthHref("sign-up", token);
   }, [token]);
 
   const onAccept = useCallback(async () => {

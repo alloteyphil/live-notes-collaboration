@@ -382,49 +382,44 @@ export const remove = mutation({
     }
     await requireEditorMembership(ctx, note.workspaceId, identity.tokenIdentifier);
 
-    const deleteInBatches = async <
+    const deleteAllByNote = async <
       T extends "presence" | "noteComments" | "noteRevisions" | "notifications",
     >(
-      table: T,
-      ids: Array<Id<T>>,
+      loadBatch: () => Promise<Array<{ _id: Id<T> }>>,
     ) => {
-      await Promise.all(ids.map((id) => ctx.db.delete(id)));
+      while (true) {
+        const rows = await loadBatch();
+        if (rows.length === 0) break;
+        await Promise.all(rows.map((row) => ctx.db.delete(row._id)));
+      }
     };
 
-    const presenceRows = await ctx.db
-      .query("presence")
-      .withIndex("by_note_id_and_last_seen_at", (q) => q.eq("noteId", args.noteId))
-      .take(200);
-    await deleteInBatches(
-      "presence",
-      presenceRows.map((row) => row._id),
+    await deleteAllByNote(() =>
+      ctx.db
+        .query("presence")
+        .withIndex("by_note_id_and_last_seen_at", (q) => q.eq("noteId", args.noteId))
+        .take(200),
     );
 
-    const commentRows = await ctx.db
-      .query("noteComments")
-      .withIndex("by_note_id_and_created_at", (q) => q.eq("noteId", args.noteId))
-      .take(500);
-    await deleteInBatches(
-      "noteComments",
-      commentRows.map((row) => row._id),
+    await deleteAllByNote(() =>
+      ctx.db
+        .query("noteComments")
+        .withIndex("by_note_id_and_created_at", (q) => q.eq("noteId", args.noteId))
+        .take(200),
     );
 
-    const revisionRows = await ctx.db
-      .query("noteRevisions")
-      .withIndex("by_note_id_and_created_at", (q) => q.eq("noteId", args.noteId))
-      .take(500);
-    await deleteInBatches(
-      "noteRevisions",
-      revisionRows.map((row) => row._id),
+    await deleteAllByNote(() =>
+      ctx.db
+        .query("noteRevisions")
+        .withIndex("by_note_id_and_created_at", (q) => q.eq("noteId", args.noteId))
+        .take(200),
     );
 
-    const notificationRows = await ctx.db
-      .query("notifications")
-      .withIndex("by_note_id", (q) => q.eq("noteId", args.noteId))
-      .take(500);
-    await deleteInBatches(
-      "notifications",
-      notificationRows.map((row) => row._id),
+    await deleteAllByNote(() =>
+      ctx.db
+        .query("notifications")
+        .withIndex("by_note_id", (q) => q.eq("noteId", args.noteId))
+        .take(200),
     );
 
     await ctx.db.delete(args.noteId);

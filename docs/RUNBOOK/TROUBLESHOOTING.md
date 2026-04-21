@@ -38,6 +38,13 @@ Checklist:
 ## Can’t access workspace or note routes
 
 - Make sure you are signed in (Clerk middleware protects everything except
-  `/`, `/sign-in`, and `/sign-up`).
+  `/`, `/sign-in`, `/sign-up`, and `/join/*` invite links).
 - Verify membership in `workspaceMembers`.
 - Use links from `/dashboard` instead of typing ids manually.
+
+## E2E tests fail with blocked Next.js dev origin
+
+If Playwright (or another local tool) uses `127.0.0.1`, Next.js dev may block HMR/resource requests unless explicitly allowed.
+
+- This repo allows `127.0.0.1` in `next.config.ts` via `allowedDevOrigins`.
+- If you use a different origin locally, add it to `allowedDevOrigins` and restart `npm run dev`.

@@ -113,3 +113,19 @@ npm run dev
   on the host.
 - Existing Better Auth users are intentionally not migrated; users will need
   to sign up again in Clerk.
+
+## Testing
+
+- Unit/integration tests:
+  - `npm run test`
+  - `npm run test:coverage`
+- E2E smoke tests (Playwright):
+  - Install browser once: `npx playwright install chromium`
+  - Run: `npm run test:e2e`
+
+Optional authenticated smoke paths:
+
+- Set `PLAYWRIGHT_SMOKE_WORKSPACE_PATH` (example: `/workspace/<id>`)
+- Set `PLAYWRIGHT_SMOKE_NOTE_PATH` (example: `/note/<id>`)
+
+These two tests are skipped when env vars are not set.

@@ -50,6 +50,35 @@ const requireWorkspaceMembership = async (
     .unique();
 };
 
+const ensureWorkspaceMembership = async (
+  ctx: MutationCtx,
+  args: {
+    workspaceId: Id<"workspaces">;
+    tokenIdentifier: string;
+    role: "owner" | "editor" | "viewer";
+    displayName?: string;
+    userEmail?: string;
+  },
+) => {
+  const existing = await requireWorkspaceMembership(
+    ctx,
+    args.workspaceId,
+    args.tokenIdentifier,
+  );
+  if (existing) return existing;
+
+  await ctx.db.insert("workspaceMembers", {
+    workspaceId: args.workspaceId,
+    tokenIdentifier: args.tokenIdentifier,
+    role: args.role,
+    displayName: args.displayName,
+    userEmail: args.userEmail,
+    createdAt: Date.now(),
+  });
+
+  return requireWorkspaceMembership(ctx, args.workspaceId, args.tokenIdentifier);
+};
+
 const requireWorkspaceOwner = async (
   ctx: QueryCtx | MutationCtx,
   workspaceId: Id<"workspaces">,
@@ -209,13 +238,12 @@ export const claimInvites = mutation({
         identity.tokenIdentifier,
       );
       if (!existingMembership) {
-        await ctx.db.insert("workspaceMembers", {
+        await ensureWorkspaceMembership(ctx, {
           workspaceId: invite.workspaceId,
           tokenIdentifier: identity.tokenIdentifier,
           role: invite.role,
           displayName: identity.name ?? undefined,
           userEmail: email,
-          createdAt: Date.now(),
         });
         claimed += 1;
       }
@@ -358,21 +386,13 @@ export const claimInviteByToken = mutation({
       );
     }
 
-    const existingMembership = await requireWorkspaceMembership(
-      ctx,
-      invite.workspaceId,
-      identity.tokenIdentifier,
-    );
-    if (!existingMembership) {
-      await ctx.db.insert("workspaceMembers", {
-        workspaceId: invite.workspaceId,
-        tokenIdentifier: identity.tokenIdentifier,
-        role: invite.role,
-        displayName: identity.name ?? undefined,
-        userEmail: email,
-        createdAt: Date.now(),
-      });
-    }
+    await ensureWorkspaceMembership(ctx, {
+      workspaceId: invite.workspaceId,
+      tokenIdentifier: identity.tokenIdentifier,
+      role: invite.role,
+      displayName: identity.name ?? undefined,
+      userEmail: email,
+    });
 
     await ctx.db.patch(invite._id, {
       status: "accepted",

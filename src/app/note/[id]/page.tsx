@@ -14,12 +14,11 @@ import { NoteToolbar } from "@/components/note/note-toolbar";
 import { NoteEditorSurface } from "@/components/note/note-editor-surface";
 import { CommentsDrawer } from "@/components/note/comments-drawer";
 import { RevisionsDrawer } from "@/components/note/revisions-drawer";
+import { getRetryDelayMs } from "@/lib/autosave";
 
 type SaveState = "idle" | "typing" | "saving" | "saved" | "error";
 type Drawer = "comments" | "revisions" | null;
 const AUTOSAVE_DEBOUNCE_MS = 220;
-const RETRY_BASE_DELAY_MS = 1000;
-const RETRY_MAX_DELAY_MS = 15000;
 
 function buildTypingLabel(displayNames: string[]): string {
   if (displayNames.length === 0) return "";
@@ -395,7 +394,7 @@ function NoteEditorPageInner() {
   useEffect(() => {
     if (!retryNeeded || !canEditThisNote || !note || (!titleDirty && !contentDirty)) return;
     if (!isOnline) return;
-    const delay = Math.min(RETRY_BASE_DELAY_MS * 2 ** Math.max(retryAttempt - 1, 0), RETRY_MAX_DELAY_MS);
+    const delay = getRetryDelayMs(retryAttempt);
     retryTimerRef.current = setTimeout(() => void flushSave(), delay);
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
