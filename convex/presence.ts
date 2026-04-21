@@ -29,9 +29,10 @@ const requireWorkspaceMembership = async (
     .withIndex("by_workspace_id_and_token_identifier", (q) =>
       q.eq("workspaceId", note.workspaceId).eq("tokenIdentifier", tokenIdentifier),
     )
-    .unique();
+    .take(5);
+  const activeMembership = membership.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
 
-  if (!membership) {
+  if (!activeMembership) {
     throw new Error("Forbidden");
   }
 

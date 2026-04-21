@@ -16,12 +16,23 @@ const getMembership = async (
   workspaceId: Id<"workspaces">,
   tokenIdentifier: string,
 ) => {
-  return ctx.db
+  const memberships = await ctx.db
     .query("workspaceMembers")
     .withIndex("by_workspace_id_and_token_identifier", (q) =>
       q.eq("workspaceId", workspaceId).eq("tokenIdentifier", tokenIdentifier),
     )
-    .unique();
+    .take(5);
+  return memberships.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+};
+
+const getWhiteboardsByWorkspace = async (
+  ctx: QueryCtx | MutationCtx,
+  workspaceId: Id<"workspaces">,
+) => {
+  return ctx.db
+    .query("whiteboards")
+    .withIndex("by_workspace_id", (q) => q.eq("workspaceId", workspaceId))
+    .take(5);
 };
 
 export const get = query({
@@ -39,10 +50,8 @@ export const get = query({
       return null;
     }
 
-    const whiteboard = await ctx.db
-      .query("whiteboards")
-      .withIndex("by_workspace_id", (q) => q.eq("workspaceId", args.workspaceId))
-      .unique();
+    const whiteboards = await getWhiteboardsByWorkspace(ctx, args.workspaceId);
+    const whiteboard = whiteboards.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
 
     return {
       whiteboard,
@@ -69,13 +78,16 @@ export const save = mutation({
     }
 
     const now = Date.now();
-    const existing = await ctx.db
-      .query("whiteboards")
-      .withIndex("by_workspace_id", (q) => q.eq("workspaceId", args.workspaceId))
-      .unique();
+    const existingRows = await getWhiteboardsByWorkspace(ctx, args.workspaceId);
+    const sortedRows = existingRows.sort((a, b) => b.updatedAt - a.updatedAt);
+    const existing = sortedRows[0];
+    const duplicates = sortedRows.slice(1);
 
     if (existing) {
       if (existing.sceneData === args.sceneData) {
+        if (duplicates.length > 0) {
+          await Promise.all(duplicates.map((row) => ctx.db.delete(row._id)));
+        }
         return existing._id;
       }
       await ctx.db.patch(existing._id, {
@@ -83,6 +95,9 @@ export const save = mutation({
         updatedByTokenIdentifier: identity.tokenIdentifier,
         updatedAt: now,
       });
+      if (duplicates.length > 0) {
+        await Promise.all(duplicates.map((row) => ctx.db.delete(row._id)));
+      }
       return existing._id;
     }
 

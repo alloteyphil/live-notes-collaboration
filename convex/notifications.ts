@@ -31,13 +31,17 @@ export const unreadCount = query({
   args: {},
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
-    const unread = await ctx.db
+    let count = 0;
+    const unreadQuery = ctx.db
       .query("notifications")
       .withIndex("by_token_identifier_and_is_read", (q) =>
         q.eq("tokenIdentifier", identity.tokenIdentifier).eq("isRead", false),
-      )
-      .take(200);
-    return unread.length;
+      );
+    for await (const row of unreadQuery) {
+      void row;
+      count += 1;
+    }
+    return count;
   },
 });
 
@@ -63,13 +67,18 @@ export const markAllRead = mutation({
   args: {},
   handler: async (ctx) => {
     const identity = await requireIdentity(ctx);
-    const unread = await ctx.db
-      .query("notifications")
-      .withIndex("by_token_identifier_and_is_read", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier).eq("isRead", false),
-      )
-      .take(200);
-    await Promise.all(unread.map((item) => ctx.db.patch(item._id, { isRead: true })));
-    return { count: unread.length };
+    let total = 0;
+    while (true) {
+      const unread = await ctx.db
+        .query("notifications")
+        .withIndex("by_token_identifier_and_is_read", (q) =>
+          q.eq("tokenIdentifier", identity.tokenIdentifier).eq("isRead", false),
+        )
+        .take(200);
+      if (unread.length === 0) break;
+      await Promise.all(unread.map((item) => ctx.db.patch(item._id, { isRead: true })));
+      total += unread.length;
+    }
+    return { count: total };
   },
 });

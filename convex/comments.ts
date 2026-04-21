@@ -18,12 +18,13 @@ const requireMembership = async (
   workspaceId: Id<"workspaces">,
   tokenIdentifier: string,
 ) => {
-  const membership = await ctx.db
+  const memberships = await ctx.db
     .query("workspaceMembers")
     .withIndex("by_workspace_id_and_token_identifier", (q) =>
       q.eq("workspaceId", workspaceId).eq("tokenIdentifier", tokenIdentifier),
     )
-    .unique();
+    .take(5);
+  const membership = memberships.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
   if (!membership) {
     throw new Error("Forbidden");
   }

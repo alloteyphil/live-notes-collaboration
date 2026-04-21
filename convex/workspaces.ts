@@ -42,12 +42,13 @@ const requireWorkspaceMembership = async (
   workspaceId: Id<"workspaces">,
   tokenIdentifier: string,
 ) => {
-  return ctx.db
+  const memberships = await ctx.db
     .query("workspaceMembers")
     .withIndex("by_workspace_id_and_token_identifier", (q) =>
       q.eq("workspaceId", workspaceId).eq("tokenIdentifier", tokenIdentifier),
     )
-    .unique();
+    .take(5);
+  return memberships.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
 };
 
 const ensureWorkspaceMembership = async (

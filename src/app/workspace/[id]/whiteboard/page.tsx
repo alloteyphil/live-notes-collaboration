@@ -44,6 +44,7 @@ export default function WorkspaceWhiteboardPage() {
   const saveInFlightRef = useRef(false);
   const queuedSceneDataRef = useRef<string | null>(null);
   const lastSavedSceneDataRef = useRef<string | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canEdit = whiteboardState?.canEdit ?? false;
   const statusLabel = useMemo(() => {
@@ -86,10 +87,39 @@ export default function WorkspaceWhiteboardPage() {
           }
         } catch (error) {
           setSaveState("error");
+          queuedSceneDataRef.current = sceneToSave;
           showToast({
             message: error instanceof Error ? error.message : "Failed to save whiteboard.",
             variant: "error",
           });
+          if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+          }
+          retryTimerRef.current = setTimeout(() => {
+            saveInFlightRef.current = false;
+            const queued = queuedSceneDataRef.current;
+            if (!queued) return;
+            queuedSceneDataRef.current = null;
+            void (async () => {
+              try {
+                setSaveState("saving");
+                await saveWhiteboard({ workspaceId, sceneData: queued });
+                lastSavedSceneDataRef.current = queued;
+                setSaveState("saved");
+                setLastSavedAt(Date.now());
+              } catch (retryError) {
+                queuedSceneDataRef.current = queued;
+                setSaveState("error");
+                showToast({
+                  message:
+                    retryError instanceof Error
+                      ? retryError.message
+                      : "Retry failed while saving whiteboard.",
+                  variant: "error",
+                });
+              }
+            })();
+          }, 1500);
           break;
         }
       }
@@ -97,6 +127,14 @@ export default function WorkspaceWhiteboardPage() {
     },
     [canEdit, saveWhiteboard, showToast, workspaceId],
   );
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
