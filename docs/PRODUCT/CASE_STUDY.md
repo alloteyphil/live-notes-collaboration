@@ -22,6 +22,7 @@ The stack demonstrates end-to-end TypeScript, realtime UX, and production-minded
 
 ## Links
 
+- [Production app](https://pulse-notes.vercel.app/)
 - [Architecture overview](../ARCH/ARCHITECTURE.md)
 - [Architecture diagram](../ARCH/ARCHITECTURE_DIAGRAM.md)
 - [Implementation status](./IMPLEMENTATION_STATUS.md)

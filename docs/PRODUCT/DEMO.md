@@ -2,6 +2,8 @@
 
 Use this checklist when recording a portfolio demo.
 
+- Live app: [https://pulse-notes.vercel.app/](https://pulse-notes.vercel.app/)
+
 ## Suggested flow (3–5 minutes)
 
 1. Landing page and sign-up.

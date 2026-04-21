@@ -9,7 +9,7 @@ Owners invite members by email from **Workspace → Members**. Pending invites a
 Each new pending invite stores a secret `claimToken` in Convex. Owners can **Copy link** on **Workspace → Invites** for any pending invite that has a token.
 
 - Link shape: `{origin}/join/{claimToken}`.
-- `origin` should be your deployed app URL. Set **`NEXT_PUBLIC_APP_URL`** in Next.js (e.g. `https://your-app.vercel.app`) so copied links stay correct behind proxies or non-default hosts. If unset, the UI falls back to `window.location.origin` in the browser.
+- `origin` should be your deployed app URL. Set **`NEXT_PUBLIC_APP_URL`** in Next.js (e.g. `https://pulse-notes.vercel.app/`) so copied links stay correct behind proxies or non-default hosts. If unset, the UI falls back to `window.location.origin` in the browser.
 - The recipient must **sign in with the same email** as the invite; the join page calls `workspaces.claimInviteByToken` after authentication.
 
 ### Sign-in redirect

@@ -45,7 +45,7 @@
 - [x] UI consistency uplift across core routes (shared shell, icons, state surfaces).
 - [x] README case study and architecture diagram (`docs/PRODUCT/CASE_STUDY.md`, `docs/ARCH/ARCHITECTURE_DIAGRAM.md`).
 - [x] Demo checklist and artifact placeholders (`docs/PRODUCT/DEMO.md`); record MP4/GIF when ready.
-- [x] Deploy documentation and README slot for production URL (replace after you ship to Vercel + Convex prod).
+- [x] Deploy documentation and README production URL set to `https://pulse-notes.vercel.app/`.
 
 ## Phase 6: Future Features
 

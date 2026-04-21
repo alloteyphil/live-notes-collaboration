@@ -35,7 +35,7 @@ A portfolio-focused realtime notes app built with:
 - **Case study:** [docs/PRODUCT/CASE_STUDY.md](docs/PRODUCT/CASE_STUDY.md)
 - **Architecture diagram:** [docs/ARCH/ARCHITECTURE_DIAGRAM.md](docs/ARCH/ARCHITECTURE_DIAGRAM.md)
 - **Demo checklist:** [docs/PRODUCT/DEMO.md](docs/PRODUCT/DEMO.md)
-- **Production URL:** deploy Next.js (for example to [Vercel](https://vercel.com)) and Convex production, then replace this line with your live app URL.
+- **Production URL:** [https://pulse-notes.vercel.app/](https://pulse-notes.vercel.app/)
 
 ## Docs Index
 
